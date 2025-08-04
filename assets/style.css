@@ -1,0 +1,75 @@
+body {
+    background-color: #121212;
+    font-family: 'Segoe UI', sans-serif;
+    color: #e0e0e0;
+    margin: 0;
+    padding: 0;
+}
+
+.main-container {
+    max-width: 800px;
+    margin: auto;
+    padding: 40px;
+    background-color: #1e1e1e;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.app-title {
+    text-align: center;
+    color: #bb86fc; /* violet accent */
+    margin-bottom: 10px;
+}
+
+.description {
+    text-align: center;
+    color: #b0b0b0;
+    font-size: 16px;
+    margin-bottom: 30px;
+}
+
+.analyze-button {
+    background-color: #bb86fc;
+    color: #1e1e1e;
+    padding: 10px 20px;
+    font-size: 16px;
+    font-weight: bold;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    display: block;
+    margin: 0 auto;
+    transition: background-color 0.3s;
+}
+
+.analyze-button:hover {
+    background-color: #9c5dfc;
+}
+
+.output-section {
+    margin-top: 40px;
+    font-size: 18px;
+    text-align: center;
+    color: #f0f0f0;
+}
+
+.options-panel {
+    background-color: #1a1a1a;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 30px;
+    box-shadow: 0 0 10px rgba(187, 134, 252, 0.2);
+}
+
+.panel-title {
+    color: #bb86fc;
+    font-size: 18px;
+    margin-bottom: 10px;
+}
+
+/* Optional: style file upload box if you use dcc.Upload */
+.dash-uploader {
+    background-color: #2a2a2a;
+    color: #bb86fc;
+    border: 2px dashed #bb86fc;
+}
