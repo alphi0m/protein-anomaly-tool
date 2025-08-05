@@ -57,14 +57,21 @@ body {
     background-color: #1a1a1a;
     padding: 20px;
     border-radius: 8px;
-    margin-bottom: 30px;
+    margin: 20px auto 30px auto;
     box-shadow: 0 0 10px rgba(187, 134, 252, 0.2);
+    max-width: 400px;     /* limita la larghezza */
+    width: 100%;
 }
 
 .panel-title {
     color: #bb86fc;
     font-size: 18px;
     margin-bottom: 10px;
+}
+
+#num-components-container {
+    color: #e0e0e0;
+    margin-top: 10px;
 }
 
 /* Optional: style file upload box if you use dcc.Upload */

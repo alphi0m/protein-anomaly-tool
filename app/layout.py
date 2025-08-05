@@ -25,23 +25,36 @@ layout = html.Div([
             multiple=False
         ),
 
-    html.Div([
-        html.H4("Opzioni di analisi", className="panel-title"),
+        html.Div([
+            html.H4("Opzioni di analisi", className="panel-title"),
 
-        dcc.Checklist(
-            id='analysis-options',
-        options=[
-                {'label': 'Applica Sin/Cos', 'value': 'anomaly'},
-                {'label': 'Modifica numero di componenti principali', 'value': 'plot'}
-            ],
-            value=[],  # default: nessuna selezionata
-            labelStyle={'display': 'block'},  # una sotto l'altra
-            inputStyle={"margin-right": "10px"}
-        )
-    ], className="options-panel"),
+            dcc.Checklist(
+                id='analysis-options',
+                options=[
+                    {'label': 'Applica Sin/Cos', 'value': 'sincos'},
+                    {'label': 'Modifica numero di componenti principali', 'value': 'pca'}
+                ],
+                value=[],
+                labelStyle={'display': 'block'},
+                inputStyle={"margin-right": "10px"}
+            ),
+
+            # Numero di componenti (inizialmente nascosto)
+            html.Div([
+                html.Label("Numero di componenti principali:"),
+                dcc.Input(
+                    id='num-components',
+                    type='number',
+                    min=1,
+                    max=20,
+                    step=1,
+                    value=3
+                )
+            ], id='num-components-container', style={'display': 'none'})
+
+        ], className="options-panel"),
 
         html.Button("Analizza", id='analyze-button', n_clicks=0, className="analyze-button"),
-
         html.Div(id='analysis-output', className='output-section'),
 
     ], className='main-container')
