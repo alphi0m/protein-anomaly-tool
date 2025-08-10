@@ -6,19 +6,42 @@ body {
     padding: 0;
 }
 
-.main-container {
+.top-container {
     max-width: 800px;
     margin: auto;
-    padding: 40px;
+    padding: 40px 40px 20px 40px;
+}
+
+.bottom-container {
+    display: flex;
+    max-width: 800px;
+    margin: 0 auto 40px auto;
+    gap: 20px;
+}
+
+.left-panel {
+    flex: 3;
     background-color: #1e1e1e;
+    padding: 20px;
     border-radius: 10px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 12px rgba(187, 134, 252, 0.3);
+    overflow-x: auto;
+}
+
+.right-panel {
+    flex: 1;
+    background-color: #1a1a1a;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(187, 134, 252, 0.3);
+    height: fit-content;
 }
 
 .app-title {
     text-align: center;
     color: #bb86fc; /* violet accent */
     margin-bottom: 10px;
+    font-weight: 700;
 }
 
 .description {
@@ -28,55 +51,66 @@ body {
     margin-bottom: 30px;
 }
 
-.analyze-button {
+.analyze-button, .proceed-button {
     background-color: #bb86fc;
     color: #1e1e1e;
-    padding: 10px 20px;
+    padding: 12px 24px;
     font-size: 16px;
-    font-weight: bold;
+    font-weight: 700;
     border: none;
-    border-radius: 5px;
+    border-radius: 8px;
     cursor: pointer;
     display: block;
-    margin: 0 auto;
-    transition: background-color 0.3s;
+    margin: 20px auto 0 auto;
+    transition: background-color 0.3s ease;
+    width: 90%;
+    max-width: 280px;
+    text-align: center;
 }
 
-.analyze-button:hover {
+.analyze-button:hover, .proceed-button:hover {
     background-color: #9c5dfc;
 }
 
 .output-section {
-    margin-top: 40px;
+    margin-top: 20px;
     font-size: 18px;
-    text-align: center;
     color: #f0f0f0;
+    text-align: center;
 }
 
 .options-panel {
     background-color: #1a1a1a;
     padding: 20px;
-    border-radius: 8px;
-    margin: 20px auto 30px auto;
-    box-shadow: 0 0 10px rgba(187, 134, 252, 0.2);
-    max-width: 400px;     /* limita la larghezza */
+    border-radius: 10px;
+    box-shadow: 0 0 15px rgba(187, 134, 252, 0.25);
+    max-width: 100%;
     width: 100%;
 }
 
 .panel-title {
     color: #bb86fc;
     font-size: 18px;
-    margin-bottom: 10px;
+    font-weight: 600;
+    margin-bottom: 15px;
 }
 
 #num-components-container {
     color: #e0e0e0;
-    margin-top: 10px;
+    margin-top: 15px;
 }
 
-/* Optional: style file upload box if you use dcc.Upload */
 .dash-uploader {
     background-color: #2a2a2a;
     color: #bb86fc;
     border: 2px dashed #bb86fc;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 20px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.dash-uploader:hover {
+    background-color: #3a3a3a;
 }
