@@ -1,3 +1,4 @@
+/* --- Body generale --- */
 body {
     background-color: #121212;
     font-family: 'Lato', sans-serif;
@@ -6,40 +7,48 @@ body {
     padding: 0;
 }
 
+/* --- Contenitore superiore: caricamento + opzioni PCA --- */
 .top-container {
-    max-width: 800px;
+    max-width: 900px;
     margin: auto;
     padding: 40px 40px 20px 40px;
+    background-color: #1e1e1e;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(187, 134, 252, 0.3);
 }
 
+/* --- Contenitore inferiore: output grafici + opzioni clustering --- */
 .bottom-container {
     display: flex;
-    max-width: 800px;
-    margin: 0 auto 40px auto;
+    max-width: 900px;
+    margin: 20px auto 40px auto;
     gap: 20px;
 }
 
+/* --- Pannello sinistro: grafici e statistiche --- */
 .left-panel {
     flex: 3;
     background-color: #1e1e1e;
     padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 4px 12px rgba(187, 134, 252, 0.3);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(187, 134, 252, 0.25);
     overflow-x: auto;
 }
 
+/* --- Pannello destro: opzioni clustering --- */
 .right-panel {
     flex: 1;
     background-color: #1a1a1a;
     padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 4px 12px rgba(187, 134, 252, 0.3);
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(187, 134, 252, 0.25);
     height: fit-content;
 }
 
+/* --- Titolo app e descrizione --- */
 .app-title {
     text-align: center;
-    color: #bb86fc; /* violet accent */
+    color: #bb86fc;
     margin-bottom: 10px;
     font-weight: 700;
 }
@@ -48,10 +57,12 @@ body {
     text-align: center;
     color: #b0b0b0;
     font-size: 16px;
-    margin-bottom: 30px;
+    margin-bottom: 25px;
 }
 
-.analyze-button, .proceed-button {
+/* --- Bottoni: Analizza e Procedi --- */
+.analyze-button,
+.proceed-button {
     background-color: #bb86fc;
     color: #1e1e1e;
     padding: 12px 24px;
@@ -68,10 +79,12 @@ body {
     text-align: center;
 }
 
-.analyze-button:hover, .proceed-button:hover {
+.analyze-button:hover,
+.proceed-button:hover {
     background-color: #9c5dfc;
 }
 
+/* --- Output grafici e tabelle --- */
 .output-section {
     margin-top: 20px;
     font-size: 18px;
@@ -79,13 +92,14 @@ body {
     text-align: center;
 }
 
+/* --- Pannelli delle opzioni --- */
 .options-panel {
     background-color: #1a1a1a;
     padding: 20px;
     border-radius: 10px;
     box-shadow: 0 0 15px rgba(187, 134, 252, 0.25);
-    max-width: 100%;
     width: 100%;
+    margin-top: 10px;
 }
 
 .panel-title {
@@ -95,11 +109,13 @@ body {
     margin-bottom: 15px;
 }
 
+/* --- Numero di componenti PCA --- */
 #num-components-container {
     color: #e0e0e0;
     margin-top: 15px;
 }
 
+/* --- Upload box --- */
 .dash-uploader {
     background-color: #2a2a2a;
     color: #bb86fc;
@@ -113,4 +129,24 @@ body {
 
 .dash-uploader:hover {
     background-color: #3a3a3a;
+}
+
+/* --- Lista file caricati --- */
+#file-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+    list-style: none;
+    padding-left: 0;
+}
+
+#file-list li {
+    background-color: #3a2a8f;
+    border-radius: 15px;
+    padding: 4px 10px;
+    color: #e0dfff;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 0 5px rgba(187, 134, 252, 0.5);
 }

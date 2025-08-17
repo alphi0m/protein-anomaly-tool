@@ -2,10 +2,13 @@ from dash import html, dcc
 
 layout = html.Div([
 
+    # Sezione superiore: caricamento file + opzioni PCA/SinCos + Analizza
     html.Div([
         html.H1("Protein Anomaly Detector", className="app-title"),
-        html.P("Carica una simulazione molecolare per analizzare le dinamiche della proteina.",
-               className="description"),
+        html.P(
+            "Carica una simulazione molecolare per analizzare le dinamiche della proteina.",
+            className="description"
+        ),
 
         dcc.Upload(
             id='upload-files',
@@ -44,34 +47,20 @@ layout = html.Div([
             }
         ),
 
-        html.Button("Analizza", id='analyze-button', n_clicks=0, className="analyze-button"),
-
-    ], className='top-container'),
-
-
-    html.Div([
-
-        # Sinistra: output analisi (statistiche + grafici)
-        html.Div(id='analysis-output', className='left-panel'),
-
-        # Destra: pannello opzioni + bottone procedi
+        # Opzioni sin/cos e PCA
         html.Div([
-            html.H4("Opzioni di analisi", className="panel-title"),
-
             dcc.Checklist(
                 id='preprocessing-options',
                 options=[{'label': 'Applica Sin/Cos', 'value': 'sincos'}],
                 value=[],
-                labelStyle={'display': 'block'},
-                inputStyle={"margin-right": "10px"}
+                labelStyle={'display': 'inline-block', 'marginRight': '20px'}
             ),
 
             dcc.Checklist(
                 id='pca-toggle',
                 options=[{'label': 'Abilita PCA', 'value': 'pca'}],
                 value=[],
-                labelStyle={'display': 'block'},
-                inputStyle={"margin-right": "10px"}
+                labelStyle={'display': 'inline-block', 'marginRight': '20px'}
             ),
 
             html.Div([
@@ -84,10 +73,52 @@ layout = html.Div([
                     step=1,
                     value=3
                 )
-            ], id='num-components-container', style={'display': 'none'}),
+            ], id='num-components-container', style={'display': 'none', 'marginTop': '5px'}),
 
-            html.Button("Procedi a Clustering", id='proceed-button', n_clicks=0, className="proceed-button")
+            html.Button("Analizza", id='analyze-button', n_clicks=0,
+                        className="analyze-button", style={'marginTop': '10px'})
+        ], style={'marginTop': '10px'}),
 
+        # Store per salvare PCA dati per clustering
+        dcc.Store(id='stored-pca-data')
+    ], className='top-container'),
+
+
+    # Sezione inferiore
+    html.Div([
+
+        # Colonna sinistra con due aree distinte:
+        html.Div([
+            html.H3("Risultati PCA"),
+            html.Div(id='analysis-output', className='analysis-panel'),
+
+            html.Hr(),
+
+            html.H3("Risultati Clustering"),
+            html.Div(id='clustering-output', className='clustering-panel'),
+        ], className='left-panel'),
+
+        # Colonna destra: opzioni clustering
+        html.Div([
+            html.H4("Opzioni Clustering", className="panel-title"),
+
+            html.Label("Seleziona algoritmo di clustering:"),
+            dcc.Dropdown(
+                id='clustering-algorithm',
+                options=[
+                    {'label': 'DBSCAN', 'value': 'dbscan'},
+                    {'label': 'OPTICS', 'value': 'optics'},
+                    {'label': 'Spectral Clustering', 'value': 'spectral'}
+                ],
+                value='dbscan',
+                clearable=False
+            ),
+
+            # Parametri dinamici per algoritmo selezionato
+            html.Div(id='clustering-parameters', style={'marginTop': '10px'}),
+
+            html.Button("Procedi a Clustering", id='proceed-button', n_clicks=0,
+                        className="proceed-button", style={'marginTop': '10px'})
         ], className='right-panel'),
 
     ], className='bottom-container'),
