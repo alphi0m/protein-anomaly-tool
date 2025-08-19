@@ -19,18 +19,25 @@ layout = html.Div([
                     html.A('selezionali dal tuo computer')
                 ], style={'fontWeight': 'bold', 'color': '#bb86fc'}),
 
-                html.Ul(id='file-list', style={
-                    'listStyleType': 'none',
-                    'paddingLeft': '0',
-                    'marginTop': '10px',
-                    'display': 'flex',
-                    'gap': '10px',
-                    'overflowX': 'auto',
-                    'maxWidth': '100%',
-                    'color': '#d1b3ff',
-                    'fontSize': '14px',
-                    'textAlign': 'left',
-                }),
+                html.Ul(
+                    id='file-list',
+                    style={
+                        'listStyleType': 'none',
+                        'paddingLeft': '0',
+                        'marginTop': '10px',
+                        'display': 'flex',
+                        'gap': '10px',
+                        'overflowX': 'auto',
+                        'overflowY': 'hidden',
+                        'flexWrap': 'nowrap',
+                        'whiteSpace': 'nowrap',
+                        'maxWidth': '100%',
+                        'maxHeight': '50px',
+                        'color': '#d1b3ff',
+                        'fontSize': '14px',
+                        'textAlign': 'left',
+                    }
+                )
             ]),
             style={
                 'width': '100%',

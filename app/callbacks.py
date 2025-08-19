@@ -349,7 +349,7 @@ def register_callbacks(app):
                     pca_df, models)
                 return html.Div([dcc.Graph(figure=fig) for fig in figs])
 
-            # Altri modelli ancora non implementati
+            # Altri modelli ancora non implementati // MANCA PER ORA LSTM per problemi di compatibilità con il mio ambiente
             else:
                 return html.Div("Modello non ancora implementato.")
 

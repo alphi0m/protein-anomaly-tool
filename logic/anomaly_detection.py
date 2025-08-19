@@ -49,10 +49,7 @@ def calculate_variable_thresholds(errors, pen=1):
 # ===============================
 
 def train_linear_regression(pca_df, n=180, w=20):
-    """
-    Allena modelli di regressione lineare per PC1, PC2, PC3.
-    Restituisce modelli e soglie fisse calcolate sul training.
-    """
+
     models = {}
     train_thresholds = {}
     train_squared_thresholds = {}
@@ -84,10 +81,7 @@ def train_linear_regression(pca_df, n=180, w=20):
 
 
 def detect_anomalies_linear(pca_df, models, n=180, w=20):
-    """
-    Usa i modelli addestrati per rilevare anomalie su PC1, PC2, PC3.
-    Restituisce errori, soglie e grafici Plotly.
-    """
+
     test_time = np.arange(n, len(pca_df))
 
     prediction_errors = {pc: [] for pc in ['PC1', 'PC2', 'PC3']}
@@ -145,10 +139,7 @@ def detect_anomalies_linear(pca_df, models, n=180, w=20):
 # Linear Regression + Bagging
 # -------------------------
 def train_linear_regression_bagging(pca_df, n=180, w=20, num_models=10):
-    """
-    Addestra un ensemble di Linear Regression per PC1, PC2, PC3 con bagging.
-    Restituisce i modelli e le soglie fisse sul training set.
-    """
+
     all_models = {pc: [] for pc in ['PC1','PC2','PC3']}
     train_thresholds = {}
     train_squared_thresholds = {}
@@ -175,17 +166,7 @@ def train_linear_regression_bagging(pca_df, n=180, w=20, num_models=10):
     return all_models, train_thresholds, train_squared_thresholds
 
 def detect_anomalies_linear_bagging(pca_df, all_models, n=180, w=20):
-    """
-    Usa i modelli addestrati con bagging per rilevare anomalie.
-    Restituisce:
-        - figs: lista di grafici Plotly (Prediction Error, Squared Error, Prediction with Interval)
-        - prediction_errors: errori assoluti
-        - squared_errors: errori quadratici
-        - thresholds: soglie fisse
-        - squared_thresholds: soglie quadratiche fisse
-        - variable_thresholds: soglie variabili
-        - variable_squared_thresholds: soglie quadratiche variabili
-    """
+
     import numpy as np
     import plotly.graph_objs as go
 
@@ -276,7 +257,7 @@ def train_random_forest_bagging(pca_df, n=180, w=20, num_models=10):
     from sklearn.ensemble import RandomForestRegressor
     from sklearn.utils import resample
     import joblib
-    # Dizionario modelli e errori
+
     all_models = {'PC1': [], 'PC2': [], 'PC3': []}
     train_prediction_errors = {'PC1': [], 'PC2': [], 'PC3': []}
     train_squared_errors = {'PC1': [], 'PC2': [], 'PC3': []}
@@ -373,10 +354,7 @@ def detect_anomalies_random_forest_bagging(pca_df, all_models, n=180, w=20):
 # -------------------------
 
 def train_gradient_boosting_bagging(pca_df, n=180, w=20, num_models=10):
-    """
-    Addestra modelli Gradient Boosting con bagging per PC1, PC2, PC3.
-    Restituisce: all_models, train_thresholds, train_squared_thresholds
-    """
+
     def create_features_and_target(data, window_size):
         X, y = [], []
         for i in range(len(data) - window_size):
@@ -483,10 +461,7 @@ def detect_anomalies_gradient_boosting_bagging(pca_df, all_models, n=180, w=20):
 # -------------------------
 
 def train_extra_trees_bagging(pca_df, n=180, w=20, num_models=10):
-    """
-    Addestra modelli Extra Trees Regressor con bagging per PC1, PC2, PC3.
-    Restituisce i modelli e le soglie di training.
-    """
+
     from sklearn.ensemble import ExtraTreesRegressor
     from sklearn.utils import resample
     import numpy as np
@@ -525,15 +500,7 @@ def train_extra_trees_bagging(pca_df, n=180, w=20, num_models=10):
 
 
 def detect_anomalies_extra_trees_bagging(pca_df, all_models, n=180, w=20):
-    """
-    Rileva anomalie usando Extra Trees Regressor con bagging.
-    Restituisce:
-        - figs: grafici Plotly
-        - prediction_errors, squared_errors
-        - thresholds, squared_thresholds
-        - variable_thresholds, variable_squared_thresholds
-        - predictions, prediction_intervals
-    """
+
 
     prediction_errors = {pc: [] for pc in ['PC1','PC2','PC3']}
     squared_errors = {pc: [] for pc in ['PC1','PC2','PC3']}
