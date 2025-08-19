@@ -17,7 +17,7 @@ body {
     box-shadow: 0 4px 15px rgba(187, 134, 252, 0.3);
 }
 
-/* --- Contenitore inferiore: output grafici + opzioni clustering --- */
+/* --- Contenitore inferiore: output grafici + opzioni --- */
 .bottom-container {
     display: flex;
     max-width: 900px;
@@ -25,7 +25,7 @@ body {
     gap: 20px;
 }
 
-/* --- Pannello sinistro: grafici e statistiche --- */
+/* --- Pannello sinistro: PCA + Clustering + Anomaly --- */
 .left-panel {
     flex: 3;
     background-color: #1e1e1e;
@@ -35,7 +35,17 @@ body {
     overflow-x: auto;
 }
 
-/* --- Pannello destro: opzioni clustering --- */
+.analysis-panel,
+.clustering-panel,
+.anomaly-panel {
+    margin-top: 15px;
+    padding: 15px;
+    background-color: #222;
+    border-radius: 10px;
+    box-shadow: inset 0 0 10px rgba(187, 134, 252, 0.15);
+}
+
+/* --- Pannello destro: opzioni clustering + anomaly detection --- */
 .right-panel {
     flex: 1;
     background-color: #1a1a1a;
@@ -43,6 +53,13 @@ body {
     border-radius: 12px;
     box-shadow: 0 4px 12px rgba(187, 134, 252, 0.25);
     height: fit-content;
+}
+
+.panel-title {
+    color: #bb86fc;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 15px;
 }
 
 /* --- Titolo app e descrizione --- */
@@ -60,9 +77,10 @@ body {
     margin-bottom: 25px;
 }
 
-/* --- Bottoni: Analizza e Procedi --- */
+/* --- Bottoni: Analizza, Clustering e Anomaly --- */
 .analyze-button,
-.proceed-button {
+.proceed-button,
+.anomaly-button {
     background-color: #bb86fc;
     color: #1e1e1e;
     padding: 12px 24px;
@@ -80,7 +98,8 @@ body {
 }
 
 .analyze-button:hover,
-.proceed-button:hover {
+.proceed-button:hover,
+.anomaly-button:hover {
     background-color: #9c5dfc;
 }
 
@@ -90,23 +109,6 @@ body {
     font-size: 18px;
     color: #f0f0f0;
     text-align: center;
-}
-
-/* --- Pannelli delle opzioni --- */
-.options-panel {
-    background-color: #1a1a1a;
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 0 15px rgba(187, 134, 252, 0.25);
-    width: 100%;
-    margin-top: 10px;
-}
-
-.panel-title {
-    color: #bb86fc;
-    font-size: 18px;
-    font-weight: 600;
-    margin-bottom: 15px;
 }
 
 /* --- Numero di componenti PCA --- */

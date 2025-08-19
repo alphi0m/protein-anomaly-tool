@@ -79,7 +79,7 @@ layout = html.Div([
                         className="analyze-button", style={'marginTop': '10px'})
         ], style={'marginTop': '10px'}),
 
-        # Store per salvare PCA dati per clustering
+        # Store per salvare PCA dati per clustering/anomaly detection
         dcc.Store(id='stored-pca-data')
     ], className='top-container'),
 
@@ -87,7 +87,7 @@ layout = html.Div([
     # Sezione inferiore
     html.Div([
 
-        # Colonna sinistra con due aree distinte:
+        # Colonna sinistra con tre aree distinte
         html.Div([
             html.H3("Risultati PCA"),
             html.Div(id='analysis-output', className='analysis-panel'),
@@ -96,10 +96,17 @@ layout = html.Div([
 
             html.H3("Risultati Clustering"),
             html.Div(id='clustering-output', className='clustering-panel'),
+
+            html.Hr(),
+
+            html.H3("Anomaly Detection"),
+            html.Div(id='anomaly-output', className='anomaly-panel'),
         ], className='left-panel'),
 
-        # Colonna destra: opzioni clustering
+        # Colonna destra: opzioni clustering + anomaly detection
         html.Div([
+
+            # Clustering
             html.H4("Opzioni Clustering", className="panel-title"),
 
             html.Label("Seleziona algoritmo di clustering:"),
@@ -114,11 +121,35 @@ layout = html.Div([
                 clearable=False
             ),
 
-            # Parametri dinamici per algoritmo selezionato
             html.Div(id='clustering-parameters', style={'marginTop': '10px'}),
 
             html.Button("Procedi a Clustering", id='proceed-button', n_clicks=0,
-                        className="proceed-button", style={'marginTop': '10px'})
+                        className="proceed-button", style={'marginTop': '10px'}),
+
+            html.Hr(),
+
+            # Anomaly detection
+            html.H4("Opzioni Anomaly Detection", className="panel-title"),
+
+            html.Label("Seleziona algoritmo di anomaly detection:"),
+            dcc.Dropdown(
+                id='anomaly-algorithm',
+                options=[
+                    {'label': 'Linear Regression', 'value': 'linreg'},
+                    {'label': 'Linear Regression + Bagging (Sin/Cos)', 'value': 'linreg_bagging'},
+                    {'label': 'LSTM + Bagging (Sin/Cos)', 'value': 'lstm_bagging'},
+                    {'label': 'Random Forest Regression + Bagging', 'value': 'rf_bagging'},
+                    {'label': 'Gradient Boosting Regressor + Bagging', 'value': 'gb_bagging'},
+                    {'label': 'Extra Trees Regressor + Bagging', 'value': 'et_bagging'}
+                ],
+                value='linreg',
+                clearable=False
+            ),
+
+            html.Div(id='anomaly-parameters', style={'marginTop': '10px'}),
+
+            html.Button("Applica Anomaly Detection", id='anomaly-button', n_clicks=0,
+                        className="anomaly-button", style={'marginTop': '10px'})
         ], className='right-panel'),
 
     ], className='bottom-container'),

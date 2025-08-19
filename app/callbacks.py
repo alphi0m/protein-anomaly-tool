@@ -11,6 +11,12 @@ from sklearn.preprocessing import StandardScaler
 from logic.pca_utils import compute_windowed_pca
 from logic.clustering_utils import dbscan_clustering, optics_clustering, spectral_clustering
 
+from logic.anomaly_detection import (
+    train_linear_regression, detect_anomalies_linear, train_linear_regression_bagging, detect_anomalies_linear_bagging,
+    train_random_forest_bagging, detect_anomalies_random_forest_bagging, train_gradient_boosting_bagging,
+    detect_anomalies_gradient_boosting_bagging, train_extra_trees_bagging, detect_anomalies_extra_trees_bagging
+)
+
 
 def register_callbacks(app):
 
@@ -291,4 +297,66 @@ def register_callbacks(app):
             tb = traceback.format_exc()
             return html.Div([
                 html.B("Errore clustering:"), html.Pre(str(e)), html.Pre(tb)
+            ], style={'color': '#ffaaaa'})
+
+    # ----------------- CALLBACK ANOMALY DETECTION -----------------
+    @app.callback(
+        Output('anomaly-output', 'children'),
+        Input('anomaly-button', 'n_clicks'),
+        State('stored-pca-data', 'data'),
+        State('anomaly-algorithm', 'value')
+    )
+    def perform_anomaly_detection(n_clicks, stored_pca_json, model_name):
+        if not n_clicks or not stored_pca_json:
+            return no_update
+
+        try:
+            # Recupera dati PCA
+            pca_df = pd.read_json(io.StringIO(stored_pca_json), orient='split')
+            pc_cols = [c for c in pca_df.columns if c.startswith("PC")]
+
+            # ------------------- Linear Regression semplice -------------------
+            if model_name == "linreg":
+                models, train_thresholds, train_squared_thresholds = train_linear_regression(pca_df)
+                figs, errors, sq_errors = detect_anomalies_linear(pca_df, models)
+                return html.Div([dcc.Graph(figure=fig) for fig in figs])
+
+            # ------------- Linear Regression + Bagging (Sin/Cos) -------------
+            elif model_name == "linreg_bagging":
+                models, train_thresholds, train_squared_thresholds = train_linear_regression_bagging(pca_df)
+                figs, errors, sq_errors, thresholds, sq_thresholds, variable_thresholds, variable_sq_thresholds = detect_anomalies_linear_bagging(
+                    pca_df, models)
+                return html.Div([dcc.Graph(figure=fig) for fig in figs])
+
+            # ---------------- Random Forest Regression + Bagging ----------------
+            elif model_name == "rf_bagging":
+                models, train_thresholds, train_squared_thresholds = train_random_forest_bagging(pca_df)
+                figs, errors, sq_errors, thresholds, sq_thresholds, variable_thresholds, variable_sq_thresholds = detect_anomalies_random_forest_bagging(
+                    pca_df, models)
+                return html.Div([dcc.Graph(figure=fig) for fig in figs])
+
+            # ------------- Gradient Boosting + Bagging ----------------
+            elif model_name == "gb_bagging":
+                models, train_thresholds, train_squared_thresholds = train_gradient_boosting_bagging(pca_df)
+                figs, errors, sq_errors, thresholds, sq_thresholds, variable_thresholds, variable_sq_thresholds, predictions, prediction_intervals = detect_anomalies_gradient_boosting_bagging(
+                    pca_df, models)
+                return html.Div([dcc.Graph(figure=fig) for fig in figs])
+
+            # ------------- Extra Tree Regressor + Bagging ----------------
+            elif model_name == "et_bagging":
+                models, train_thresholds, train_squared_thresholds = train_extra_trees_bagging(pca_df)
+                figs, errors, sq_errors, thresholds, sq_thresholds, variable_thresholds, variable_sq_thresholds, predictions, prediction_intervals = detect_anomalies_extra_trees_bagging(
+                    pca_df, models)
+                return html.Div([dcc.Graph(figure=fig) for fig in figs])
+
+            # Altri modelli ancora non implementati
+            else:
+                return html.Div("Modello non ancora implementato.")
+
+        except Exception as e:
+            tb = traceback.format_exc()
+            return html.Div([
+                html.B("Errore anomaly detection:"),
+                html.Pre(str(e)),
+                html.Pre(tb, style={'whiteSpace': 'pre-wrap', 'maxHeight': '300px', 'overflowY': 'auto'})
             ], style={'color': '#ffaaaa'})
