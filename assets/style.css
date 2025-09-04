@@ -1,91 +1,68 @@
 /* --- Body generale --- */
 body {
-    background-color: #121212;
+    background-color: #f5f5f7;
     font-family: 'Lato', sans-serif;
-    color: #e0e0e0;
+    color: #222;
     margin: 0;
     padding: 0;
 }
 
-/* --- Contenitore superiore: caricamento + opzioni PCA --- */
-.top-container {
-    max-width: 900px;
-    margin: auto;
-    padding: 40px 40px 20px 40px;
-    background-color: #1e1e1e;
-    border-radius: 12px;
-    box-shadow: 0 4px 15px rgba(187, 134, 252, 0.3);
-}
-
-/* --- Contenitore inferiore: output grafici + opzioni --- */
-.bottom-container {
-    display: flex;
-    max-width: 990px;
-    margin: 20px auto 40px auto;
-    gap: 20px;
-}
-
-/* --- Pannello sinistro: PCA + Clustering + Anomaly --- */
-.left-panel {
-    flex: 3;
-    background-color: #1e1e1e;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(187, 134, 252, 0.25);
-    overflow-x: auto;
-}
-
-.analysis-panel,
-.clustering-panel,
-.anomaly-panel {
-    margin-top: 15px;
-    padding: 15px;
-    background-color: #222;
-    border-radius: 10px;
-    box-shadow: inset 0 0 10px rgba(187, 134, 252, 0.15);
-}
-
-/* --- Pannello destro: opzioni clustering + anomaly detection --- */
-.right-panel {
-    flex: 1;
-    background-color: #1a1a1a;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(187, 134, 252, 0.25);
-    height: fit-content;
-}
-
-.panel-title {
-    color: #bb86fc;
-    font-size: 18px;
-    font-weight: 600;
-    margin-bottom: 15px;
+/* --- Contenitore box generici --- */
+.box {
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 25px 30px;
+    background-color: #ffffff;
+    border-radius: 14px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 4px 15px rgba(187, 134, 252, 0.25); /* Ombra viola */
 }
 
 /* --- Titolo app e descrizione --- */
 .app-title {
     text-align: center;
-    color: #bb86fc;
+    color: #7a42ff;   /* Viola */
     margin-bottom: 10px;
     font-weight: 700;
+    font-size: 28px;
 }
 
 .description {
     text-align: center;
-    color: #b0b0b0;
+    color: #555;
     font-size: 16px;
     margin-bottom: 25px;
+}
+
+/* --- Sezioni output grafici/tabelle --- */
+.analysis-panel,
+.clustering-panel,
+.anomaly-panel {
+    margin-top: 15px;
+    padding: 20px;
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    box-shadow: inset 0 0 8px rgba(187, 134, 252, 0.15);
+}
+
+/* --- Titoli pannelli --- */
+h3, .panel-title {
+    color: #7a42ff;  /* Viola */
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 15px;
 }
 
 /* --- Bottoni: Analizza, Clustering e Anomaly --- */
 .analyze-button,
 .proceed-button,
 .anomaly-button {
-    background-color: #bb86fc;
-    color: #1e1e1e;
+    background-color: #7a42ff;   /* Viola */
+    color: #fff;
     padding: 12px 24px;
-    font-size: 16px;
-    font-weight: 700;
+    font-size: 15px;
+    font-weight: 600;
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -100,37 +77,25 @@ body {
 .analyze-button:hover,
 .proceed-button:hover,
 .anomaly-button:hover {
-    background-color: #9c5dfc;
-}
-
-/* --- Output grafici e tabelle --- */
-.output-section {
-    margin-top: 20px;
-    font-size: 18px;
-    color: #f0f0f0;
-    text-align: center;
-}
-
-/* --- Numero di componenti PCA --- */
-#num-components-container {
-    color: #e0e0e0;
-    margin-top: 15px;
+    background-color: #5e32cc;   /* Viola più scuro */
 }
 
 /* --- Upload box --- */
 .dash-uploader {
-    background-color: #2a2a2a;
-    color: #bb86fc;
-    border: 2px dashed #bb86fc;
-    border-radius: 8px;
-    padding: 10px;
+    background-color: #faf7ff;
+    color: #7a42ff;
+    border: 2px dashed #7a42ff;
+    border-radius: 12px;
+    padding: 20px;
     margin-bottom: 20px;
     font-weight: 600;
     cursor: pointer;
+    text-align: center;
+    transition: background-color 0.2s ease;
 }
 
 .dash-uploader:hover {
-    background-color: #3a3a3a;
+    background-color: #f1eaff;
 }
 
 /* --- Lista file caricati --- */
@@ -141,14 +106,21 @@ body {
     margin-top: 10px;
     list-style: none;
     padding-left: 0;
+    overflow-x: auto;
 }
 
 #file-list li {
-    background-color: #3a2a8f;
+    background-color: #efe6ff;
     border-radius: 15px;
-    padding: 4px 10px;
-    color: #e0dfff;
+    padding: 6px 12px;
+    color: #333;
     font-weight: 600;
     white-space: nowrap;
-    box-shadow: 0 0 5px rgba(187, 134, 252, 0.5);
+    box-shadow: 0 0 6px rgba(122, 66, 255, 0.35); /* Ombra pillole viola */
+}
+
+/* --- Numero di componenti PCA --- */
+#num-components-container {
+    color: #333;
+    margin-top: 15px;
 }

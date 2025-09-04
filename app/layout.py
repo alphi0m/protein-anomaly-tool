@@ -2,7 +2,7 @@ from dash import html, dcc
 
 layout = html.Div([
 
-    # Sezione superiore: caricamento file + opzioni PCA/SinCos + Analizza
+    # === BOX 1: Caricamento file ===
     html.Div([
         html.H1("Protein Anomaly Detector", className="app-title"),
         html.P(
@@ -17,7 +17,7 @@ layout = html.Div([
                 html.Div(id='upload-text', children=[
                     'Trascina qui i file o ',
                     html.A('selezionali dal tuo computer')
-                ], style={'fontWeight': 'bold', 'color': '#bb86fc'}),
+                ], style={'fontWeight': 'bold', 'color': '#7a42ff'}),
 
                 html.Ul(
                     id='file-list',
@@ -28,12 +28,10 @@ layout = html.Div([
                         'display': 'flex',
                         'gap': '10px',
                         'overflowX': 'auto',
-                        'overflowY': 'hidden',
-                        'flexWrap': 'nowrap',
                         'whiteSpace': 'nowrap',
                         'maxWidth': '100%',
                         'maxHeight': '50px',
-                        'color': '#d1b3ff',
+                        'color': '#7a42ff',
                         'fontSize': '14px',
                         'textAlign': 'left',
                     }
@@ -48,13 +46,13 @@ layout = html.Div([
                 'borderRadius': '5px',
                 'textAlign': 'center',
                 'cursor': 'pointer',
-                'backgroundColor': '#2a2a2a',
-                'color': '#bb86fc',
+                'backgroundColor': '#f8f8f8',
+                'color': '#7a42ff',
                 'userSelect': 'none',
             }
         ),
 
-        # Opzioni sin/cos e PCA
+        # Opzioni preprocessing
         html.Div([
             dcc.Checklist(
                 id='preprocessing-options',
@@ -81,84 +79,82 @@ layout = html.Div([
                     value=3
                 )
             ], id='num-components-container', style={'display': 'none', 'marginTop': '5px'}),
-
-            html.Button("Analizza", id='analyze-button', n_clicks=0,
-                        className="analyze-button", style={'marginTop': '10px'})
         ], style={'marginTop': '10px'}),
 
-        # Store per salvare PCA dati per clustering/anomaly detection
+        html.Button("Analizza", id='analyze-button', n_clicks=0,
+                    className="analyze-button", style={'marginTop': '10px'}),
+
+        # Store dati PCA
         dcc.Store(id='stored-pca-data')
-    ], className='top-container'),
+    ], className='box'),
 
-
-    # Sezione inferiore
+    # === BOX 2: PCA (risultati direttamente qui) ===
     html.Div([
+        html.H3("Risultati"),
+        dcc.Loading(
+            id="loading-pca",
+            type="circle",
+            children=html.Div(id='analysis-output', className='analysis-panel')
+        )
+    ], id="pca-section", className="box", style={'display': 'none'}),
 
-        # Colonna sinistra con tre aree distinte
-        html.Div([
-            html.H3("Risultati PCA"),
-            html.Div(id='analysis-output', className='analysis-panel'),
+    # === BOX 3: Clustering ===
+    html.Div([
+        html.H4("Clustering", className="panel-title"),
 
-            html.Hr(),
+        html.Label("Seleziona algoritmo di clustering:"),
+        dcc.Dropdown(
+            id='clustering-algorithm',
+            options=[
+                {'label': 'DBSCAN', 'value': 'dbscan'},
+                {'label': 'OPTICS', 'value': 'optics'},
+                {'label': 'Spectral Clustering', 'value': 'spectral'}
+            ],
+            value='dbscan',
+            clearable=False
+        ),
 
-            html.H3("Risultati Clustering"),
-            html.Div(id='clustering-output', className='clustering-panel'),
+        html.Div(id='clustering-parameters', style={'marginTop': '10px'}),
 
-            html.Hr(),
+        html.Button("Procedi a Clustering", id='proceed-button', n_clicks=0,
+                    className="proceed-button", style={'marginTop': '10px'}),
 
-            html.H3("Anomaly Detection"),
-            html.Div(id='anomaly-output', className='anomaly-panel'),
-        ], className='left-panel'),
+        dcc.Loading(
+            id="loading-clustering",
+            type="circle",
+            children=html.Div(id='clustering-output', className='clustering-panel')
+        )
+    ], id="clustering-section", className="box", style={'display': 'none'}),
 
-        # Colonna destra: opzioni clustering + anomaly detection
-        html.Div([
+    # === BOX 4: Anomaly Detection ===
+    html.Div([
+        html.H4("Anomaly Detection", className="panel-title"),
 
-            # Clustering
-            html.H4("Opzioni Clustering", className="panel-title"),
+        html.Label("Seleziona algoritmo di anomaly detection:"),
+        dcc.Dropdown(
+            id='anomaly-algorithm',
+            options=[
+                {'label': 'Linear Regression', 'value': 'linreg'},
+                {'label': 'Linear Regression + Bagging (Sin/Cos)', 'value': 'linreg_bagging'},
+                {'label': 'LSTM + Bagging (Sin/Cos)', 'value': 'lstm_bagging'},
+                {'label': 'Random Forest Regression + Bagging', 'value': 'rf_bagging'},
+                {'label': 'Gradient Boosting Regressor + Bagging', 'value': 'gb_bagging'},
+                {'label': 'Extra Trees Regressor + Bagging', 'value': 'et_bagging'}
+            ],
+            value='linreg',
+            clearable=False
+        ),
 
-            html.Label("Seleziona algoritmo di clustering:"),
-            dcc.Dropdown(
-                id='clustering-algorithm',
-                options=[
-                    {'label': 'DBSCAN', 'value': 'dbscan'},
-                    {'label': 'OPTICS', 'value': 'optics'},
-                    {'label': 'Spectral Clustering', 'value': 'spectral'}
-                ],
-                value='dbscan',
-                clearable=False
-            ),
+        html.Div(id='anomaly-parameters', style={'marginTop': '10px'}),
 
-            html.Div(id='clustering-parameters', style={'marginTop': '10px'}),
+        html.Button("Applica Anomaly Detection", id='anomaly-button', n_clicks=0,
+                    className="anomaly-button", style={'marginTop': '10px'}),
 
-            html.Button("Procedi a Clustering", id='proceed-button', n_clicks=0,
-                        className="proceed-button", style={'marginTop': '10px'}),
-
-            html.Hr(),
-
-            # Anomaly detection
-            html.H4("Opzioni Anomaly Detection", className="panel-title"),
-
-            html.Label("Seleziona algoritmo di anomaly detection:"),
-            dcc.Dropdown(
-                id='anomaly-algorithm',
-                options=[
-                    {'label': 'Linear Regression', 'value': 'linreg'},
-                    {'label': 'Linear Regression + Bagging (Sin/Cos)', 'value': 'linreg_bagging'},
-                    {'label': 'LSTM + Bagging (Sin/Cos)', 'value': 'lstm_bagging'},
-                    {'label': 'Random Forest Regression + Bagging', 'value': 'rf_bagging'},
-                    {'label': 'Gradient Boosting Regressor + Bagging', 'value': 'gb_bagging'},
-                    {'label': 'Extra Trees Regressor + Bagging', 'value': 'et_bagging'}
-                ],
-                value='linreg',
-                clearable=False
-            ),
-
-            html.Div(id='anomaly-parameters', style={'marginTop': '10px'}),
-
-            html.Button("Applica Anomaly Detection", id='anomaly-button', n_clicks=0,
-                        className="anomaly-button", style={'marginTop': '10px'})
-        ], className='right-panel'),
-
-    ], className='bottom-container'),
+        dcc.Loading(
+            id="loading-anomaly",
+            type="circle",
+            children=html.Div(id='anomaly-output', className='anomaly-panel')
+        )
+    ], id="anomaly-section", className="box", style={'display': 'none'}),
 
 ])

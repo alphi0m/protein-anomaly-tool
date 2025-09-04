@@ -432,7 +432,15 @@ def detect_anomalies_gradient_boosting_bagging(pca_df, all_models, n=180, w=20):
         fig_err.add_trace(go.Scatter(x=test_time, y=prediction_errors[pc], mode='lines', name='Prediction Error'))
         fig_err.add_trace(go.Scatter(x=test_time, y=variable_thresholds[pc], mode='lines', name='Variable Threshold', line=dict(dash='dash')))
         fig_err.add_hline(y=thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_err.update_layout(title=f'Prediction Error - {pc}', plot_bgcolor="#1e1e1e", paper_bgcolor="#1e1e1e", font_color="white")
+        fig_err.update_layout(
+            title=f'Prediction Error - {pc}',
+            plot_bgcolor="#ffffff",
+            paper_bgcolor="#ffffff",
+            font_color="#222",
+            xaxis=dict(color="#222"),
+            yaxis=dict(color="#222"),
+            legend=dict(font=dict(color="#222"))
+        )
         figs.append(fig_err)
 
         # Squared Error
@@ -440,7 +448,15 @@ def detect_anomalies_gradient_boosting_bagging(pca_df, all_models, n=180, w=20):
         fig_sq.add_trace(go.Scatter(x=test_time, y=squared_errors[pc], mode='lines', name='Squared Error'))
         fig_sq.add_trace(go.Scatter(x=test_time, y=variable_squared_thresholds[pc], mode='lines', name='Variable Threshold', line=dict(dash='dash')))
         fig_sq.add_hline(y=squared_thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_sq.update_layout(title=f'Squared Error - {pc}', plot_bgcolor="#1e1e1e", paper_bgcolor="#1e1e1e", font_color="white")
+        fig_sq.update_layout(
+            title=f'Squared Error - {pc}',
+                plot_bgcolor="#ffffff",
+                paper_bgcolor="#ffffff",
+                font_color="#222",
+                xaxis=dict(color="#222"),
+                yaxis=dict(color="#222"),
+                legend=dict(font=dict(color="#222"))
+            )
         figs.append(fig_sq)
 
         # Prediction con intervalli
@@ -451,7 +467,14 @@ def detect_anomalies_gradient_boosting_bagging(pca_df, all_models, n=180, w=20):
         fig_pred.add_trace(go.Scatter(x=test_time, y=pca_df[pc][n:], mode='lines', name='Real', line=dict(color='red')))
         fig_pred.add_trace(go.Scatter(x=test_time, y=lower_bounds, mode='lines', name='Lower Bound', line=dict(dash='dot')))
         fig_pred.add_trace(go.Scatter(x=test_time, y=upper_bounds, mode='lines', name='Upper Bound', line=dict(dash='dot')))
-        fig_pred.update_layout(title=f'Prediction with Intervals - {pc}', plot_bgcolor="#1e1e1e", paper_bgcolor="#1e1e1e", font_color="white")
+        fig_pred.update_layout(title=f'Prediction with Intervals - {pc}',
+                                   plot_bgcolor="#ffffff",
+                                   paper_bgcolor="#ffffff",
+                                   font_color="#222",
+                                   xaxis=dict(color="#222"),
+                                   yaxis=dict(color="#222"),
+                                   legend=dict(font=dict(color="#222"))
+                               )
         figs.append(fig_pred)
 
     return figs, prediction_errors, squared_errors, thresholds, squared_thresholds, variable_thresholds, variable_squared_thresholds, predictions, prediction_intervals
@@ -501,7 +524,6 @@ def train_extra_trees_bagging(pca_df, n=180, w=20, num_models=10):
 
 def detect_anomalies_extra_trees_bagging(pca_df, all_models, n=180, w=20):
 
-
     prediction_errors = {pc: [] for pc in ['PC1','PC2','PC3']}
     squared_errors = {pc: [] for pc in ['PC1','PC2','PC3']}
     predictions = {pc: [] for pc in ['PC1','PC2','PC3']}
@@ -537,7 +559,7 @@ def detect_anomalies_extra_trees_bagging(pca_df, all_models, n=180, w=20):
         fig_err.add_trace(go.Scatter(x=test_time, y=prediction_errors[pc], mode='lines', name='Prediction Error'))
         fig_err.add_trace(go.Scatter(x=test_time, y=variable_thresholds[pc], mode='lines', name='Variable Threshold', line=dict(dash='dash')))
         fig_err.add_hline(y=thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_err.update_layout(title=f'Prediction Error - {pc}', plot_bgcolor="#1e1e1e", paper_bgcolor="#1e1e1e", font_color="white")
+        fig_err.update_layout(title=f'Prediction Error - {pc}', plot_bgcolor="#ffffff", paper_bgcolor="#ffffff", font_color="#222")
         figs.append(fig_err)
 
         # Squared Error
@@ -545,7 +567,7 @@ def detect_anomalies_extra_trees_bagging(pca_df, all_models, n=180, w=20):
         fig_sq.add_trace(go.Scatter(x=test_time, y=squared_errors[pc], mode='lines', name='Squared Error'))
         fig_sq.add_trace(go.Scatter(x=test_time, y=variable_squared_thresholds[pc], mode='lines', name='Variable Threshold', line=dict(dash='dash')))
         fig_sq.add_hline(y=squared_thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_sq.update_layout(title=f'Squared Error - {pc}', plot_bgcolor="#1e1e1e", paper_bgcolor="#1e1e1e", font_color="white")
+        fig_sq.update_layout(title=f'Squared Error - {pc}', plot_bgcolor="#ffffff", paper_bgcolor="#ffffff", font_color="#222")
         figs.append(fig_sq)
 
         # Predizione con intervalli
@@ -556,7 +578,7 @@ def detect_anomalies_extra_trees_bagging(pca_df, all_models, n=180, w=20):
         fig_pred.add_trace(go.Scatter(x=test_time, y=pca_df[pc][n:], mode='lines', name='Real', line=dict(color='red')))
         fig_pred.add_trace(go.Scatter(x=test_time, y=lower_bounds, mode='lines', name='Lower Bound', line=dict(dash='dot')))
         fig_pred.add_trace(go.Scatter(x=test_time, y=upper_bounds, mode='lines', name='Upper Bound', line=dict(dash='dot')))
-        fig_pred.update_layout(title=f'Prediction with Intervals - {pc}', plot_bgcolor="#1e1e1e", paper_bgcolor="#1e1e1e", font_color="white")
+        fig_pred.update_layout(title=f'Prediction with Intervals - {pc}', plot_bgcolor="#ffffff", paper_bgcolor="#ffffff", font_color="#222")
         figs.append(fig_pred)
 
     return figs, prediction_errors, squared_errors, thresholds, squared_thresholds, variable_thresholds, variable_squared_thresholds, predictions, prediction_intervals
