@@ -1,3 +1,5 @@
+# python
+# app/layout.py
 from dash import html, dcc
 
 layout = html.Div([
@@ -9,33 +11,20 @@ layout = html.Div([
             "Carica una simulazione molecolare per analizzare le dinamiche della proteina.",
             className="description"
         ),
-
         dcc.Upload(
             id='upload-files',
             multiple=True,
+            className='dash-uploader',
             children=html.Div([
-                html.Div(id='upload-text', children=[
-                    'Trascina qui i file o ',
-                    html.A('selezionali dal tuo computer')
-                ], style={'fontWeight': 'bold', 'color': '#7a42ff'}),
-
-                html.Ul(
-                    id='file-list',
-                    style={
-                        'listStyleType': 'none',
-                        'paddingLeft': '0',
-                        'marginTop': '10px',
-                        'display': 'flex',
-                        'gap': '10px',
-                        'overflowX': 'auto',
-                        'whiteSpace': 'nowrap',
-                        'maxWidth': '100%',
-                        'maxHeight': '50px',
-                        'color': '#7a42ff',
-                        'fontSize': '14px',
-                        'textAlign': 'left',
-                    }
-                )
+                html.Div(
+                    id='upload-text',
+                    children=[
+                        "Trascina qui i file o ",
+                        html.A("selezionali dal tuo computer")
+                    ],
+                    style={'fontWeight': 'bold', 'color': '#7a42ff'}
+                ),
+                html.Ul(id='file-list')
             ]),
             style={
                 'width': '100%',
@@ -51,8 +40,6 @@ layout = html.Div([
                 'userSelect': 'none',
             }
         ),
-
-        # Opzioni preprocessing
         html.Div([
             dcc.Checklist(
                 id='preprocessing-options',
@@ -60,14 +47,12 @@ layout = html.Div([
                 value=[],
                 labelStyle={'display': 'inline-block', 'marginRight': '20px'}
             ),
-
             dcc.Checklist(
                 id='pca-toggle',
                 options=[{'label': 'Abilita PCA', 'value': 'pca'}],
                 value=[],
                 labelStyle={'display': 'inline-block', 'marginRight': '20px'}
             ),
-
             html.Div([
                 html.Label("Numero di componenti principali:"),
                 dcc.Input(
@@ -76,19 +61,23 @@ layout = html.Div([
                     min=1,
                     max=20,
                     step=1,
-                    value=3
+                    value=3,
+                    placeholder='es. 3',
+                    style={'width': '120px'}
                 )
             ], id='num-components-container', style={'display': 'none', 'marginTop': '5px'}),
         ], style={'marginTop': '10px'}),
-
-        html.Button("Analizza", id='analyze-button', n_clicks=0,
-                    className="analyze-button", style={'marginTop': '10px'}),
-
-        # Store dati PCA
+        html.Button(
+            "Analizza",
+            id='analyze-button',
+            n_clicks=0,
+            className="analyze-button",
+            style={'marginTop': '10px'}
+        ),
         dcc.Store(id='stored-pca-data')
     ], className='box'),
 
-    # === BOX 2: PCA (risultati direttamente qui) ===
+    # === BOX 2: Risultati (PCA / Statistiche) ===
     html.Div([
         html.H3("Risultati"),
         dcc.Loading(
@@ -101,24 +90,25 @@ layout = html.Div([
     # === BOX 3: Clustering ===
     html.Div([
         html.H4("Clustering", className="panel-title"),
-
         html.Label("Seleziona algoritmo di clustering:"),
         dcc.Dropdown(
             id='clustering-algorithm',
             options=[
                 {'label': 'DBSCAN', 'value': 'dbscan'},
                 {'label': 'OPTICS', 'value': 'optics'},
-                {'label': 'Spectral Clustering', 'value': 'spectral'}
+                {'label': 'Spectral Clustering', 'value': 'spectral'},
             ],
             value='dbscan',
             clearable=False
         ),
-
         html.Div(id='clustering-parameters', style={'marginTop': '10px'}),
-
-        html.Button("Procedi a Clustering", id='proceed-button', n_clicks=0,
-                    className="proceed-button", style={'marginTop': '10px'}),
-
+        html.Button(
+            "Procedi a Clustering",
+            id='proceed-button',
+            n_clicks=0,
+            className="proceed-button",
+            style={'marginTop': '10px'}
+        ),
         dcc.Loading(
             id="loading-clustering",
             type="circle",
@@ -129,26 +119,194 @@ layout = html.Div([
     # === BOX 4: Anomaly Detection ===
     html.Div([
         html.H4("Anomaly Detection", className="panel-title"),
-
         html.Label("Seleziona algoritmo di anomaly detection:"),
         dcc.Dropdown(
             id='anomaly-algorithm',
             options=[
                 {'label': 'Linear Regression', 'value': 'linreg'},
                 {'label': 'Linear Regression + Bagging (Sin/Cos)', 'value': 'linreg_bagging'},
-                {'label': 'LSTM + Bagging (Sin/Cos)', 'value': 'lstm_bagging'},
-                {'label': 'Random Forest Regression + Bagging', 'value': 'rf_bagging'},
-                {'label': 'Gradient Boosting Regressor + Bagging', 'value': 'gb_bagging'},
-                {'label': 'Extra Trees Regressor + Bagging', 'value': 'et_bagging'}
+                {'label': 'Random Forest + Bagging', 'value': 'rf_bagging'},
+                {'label': 'Gradient Boosting + Bagging', 'value': 'gb_bagging'},
+                {'label': 'Extra Trees + Bagging', 'value': 'et_bagging'},
             ],
             value='linreg',
             clearable=False
         ),
 
-        html.Div(id='anomaly-parameters', style={'marginTop': '10px'}),
+        # === PARAMETRI DINAMICI MODELLI ===
+        html.Div([
+            # Gruppo parametri comuni
+            html.Div([
+                html.H5("Parametri comuni"),
+                html.Label("Lunghezza training:"),
+                dcc.Input(
+                    id='param-train-n',
+                    type='number',
+                    min=30,
+                    step=10,
+                    value=180,
+                    style={'width': '120px'},
+                    placeholder='es. 180'
+                ),
+                html.Br(),
+                html.Label("Dimensione finestra:"),
+                dcc.Input(
+                    id='param-window-size',
+                    type='number',
+                    min=3,
+                    step=1,
+                    value=20,
+                    style={'width': '120px'},
+                    placeholder='es. 20'
+                ),
+                html.Br(),
+                html.Label("Penalità soglia variabile:"),
+                dcc.Input(
+                    id='param-pen',
+                    type='number',
+                    min=1,
+                    step=1,
+                    value=1,
+                    style={'width': '120px'},
+                    placeholder='es. 1'
+                ),
+            ], id='params-common', className='param-group', style={'marginBottom': '15px'}),
 
-        html.Button("Applica Anomaly Detection", id='anomaly-button', n_clicks=0,
-                    className="anomaly-button", style={'marginTop': '10px'}),
+            # Gruppo parametri bagging
+            html.Div([
+                html.H5("Bagging"),
+                html.Label("Numero modelli:"),
+                dcc.Input(
+                    id='param-num-models',
+                    type='number',
+                    min=1,
+                    step=1,
+                    value=10,
+                    style={'width': '120px'},
+                    placeholder='es. 10'
+                ),
+            ], id='params-bagging', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
+
+            # Random Forest
+            html.Div([
+                html.H5("Random Forest"),
+                html.Label("Numero alberi:"),
+                dcc.Input(
+                    id='rf-n-estimators',
+                    type='number',
+                    min=10,
+                    step=10,
+                    value=100,
+                    style={'width': '140px'},
+                    placeholder='es. 100'
+                ),
+                html.Br(),
+                html.Label("Profondità massima:"),
+                dcc.Input(
+                    id='rf-max-depth',
+                    type='number',
+                    min=1,
+                    step=1,
+                    value=10,
+                    style={'width': '140px'},
+                    placeholder='es. 10'
+                ),
+                html.Br(),
+                html.Label("Min campioni per split:"),
+                dcc.Input(
+                    id='rf-min-split',
+                    type='number',
+                    min=2,
+                    step=1,
+                    value=2,
+                    style={'width': '140px'},
+                    placeholder='es. 2'
+                ),
+            ], id='params-rf', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
+
+            # Gradient Boosting
+            html.Div([
+                html.H5("Gradient Boosting"),
+                html.Label("Numero di stadi:"),
+                dcc.Input(
+                    id='gb-n-estimators',
+                    type='number',
+                    min=10,
+                    step=10,
+                    value=100,
+                    style={'width': '140px'},
+                    placeholder='es. 100'
+                ),
+                html.Br(),
+                html.Label("Learning rate:"),
+                dcc.Input(
+                    id='gb-learning-rate',
+                    type='number',
+                    min=0.001,
+                    step=0.01,
+                    value=0.1,
+                    style={'width': '140px'},
+                    placeholder='es. 0.1'
+                ),
+                html.Br(),
+                html.Label("Massima profondità:"),
+                dcc.Input(
+                    id='gb-max-depth',
+                    type='number',
+                    min=1,
+                    step=1,
+                    value=3,
+                    style={'width': '140px'},
+                    placeholder='es. 3'
+                ),
+            ], id='params-gb', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
+
+            # Extra Trees
+            html.Div([
+                html.H5("Extra Trees"),
+                html.Label("Numero alberi:"),
+                dcc.Input(
+                    id='et-n-estimators',
+                    type='number',
+                    min=10,
+                    step=10,
+                    value=100,
+                    style={'width': '140px'},
+                    placeholder='es. 100'
+                ),
+                html.Br(),
+                html.Label("Massima profondità:"),
+                dcc.Input(
+                    id='et-max-depth',
+                    type='number',
+                    min=1,
+                    step=1,
+                    value=10,
+                    style={'width': '140px'},
+                    placeholder='es. 10'
+                ),
+                html.Br(),
+                html.Label("Min campioni per split:"),
+                dcc.Input(
+                    id='et-min-split',
+                    type='number',
+                    min=2,
+                    step=1,
+                    value=2,
+                    style={'width': '140px'},
+                    placeholder='es. 2'
+                ),
+            ], id='params-et', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
+
+        ], id='anomaly-parameters', style={'marginTop': '10px'}),
+
+        html.Button(
+            "Applica Anomaly Detection",
+            id='anomaly-button',
+            n_clicks=0,
+            className="anomaly-button",
+            style={'marginTop': '10px'}
+        ),
 
         dcc.Loading(
             id="loading-anomaly",

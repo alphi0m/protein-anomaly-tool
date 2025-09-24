@@ -36,14 +36,27 @@ def apply_light_theme(fig, title=None):
 def register_callbacks(app):
 
     # ----------------- MOSTRA INPUT NUM COMPONENTI -----------------
+    # python
+    # --- Toggle parametri Bagging e specifici modello ---
     @app.callback(
-        Output('num-components-container', 'style'),
-        Input('pca-toggle', 'value')
+        Output('params-bagging', 'style'),
+        Output('params-rf', 'style'),
+        Output('params-gb', 'style'),
+        Output('params-et', 'style'),
+        Input('anomaly-algorithm', 'value')
     )
-    def toggle_num_components(pca_value):
-        if pca_value and 'pca' in pca_value:
-            return {'display': 'block', 'marginTop': '10px'}
-        return {'display': 'none'}
+    def toggle_anomaly_param_groups(algorithm):
+        bagging_models = {'linreg_bagging', 'rf_bagging', 'gb_bagging', 'et_bagging'}
+
+        def style(show):
+            return {'marginBottom': '15px'} if show else {'display': 'none', 'marginBottom': '15px'}
+
+        return (
+            style(algorithm in bagging_models),  # params-bagging
+            style(algorithm == 'rf_bagging'),  # params-rf
+            style(algorithm == 'gb_bagging'),  # params-gb
+            style(algorithm == 'et_bagging')  # params-et
+        )
 
     # ----------------- LISTA FILE CARICATI -----------------
     @app.callback(
@@ -256,41 +269,125 @@ def register_callbacks(app):
         Output('anomaly-output', 'children'),
         Input('anomaly-button', 'n_clicks'),
         State('stored-pca-data', 'data'),
-        State('anomaly-algorithm', 'value')
+        State('anomaly-algorithm', 'value'),
+        # Parametri comuni
+        State('param-train-n', 'value'),
+        State('param-window-size', 'value'),
+        State('param-pen', 'value'),
+        # Bagging
+        State('param-num-models', 'value'),
+        # RF
+        State('rf-n-estimators', 'value'),
+        State('rf-max-depth', 'value'),
+        State('rf-min-split', 'value'),
+        # GB
+        State('gb-n-estimators', 'value'),
+        State('gb-learning-rate', 'value'),
+        State('gb-max-depth', 'value'),
+        # ET
+        State('et-n-estimators', 'value'),
+        State('et-max-depth', 'value'),
+        State('et-min-split', 'value')
     )
-    def perform_anomaly_detection(n_clicks, stored_pca_json, model_name):
+    def perform_anomaly_detection(n_clicks, stored_pca_json, model_name,
+                                  n_train, w_size, pen_value,
+                                  num_models,
+                                  rf_n_estimators, rf_max_depth, rf_min_split,
+                                  gb_n_estimators, gb_learning_rate, gb_max_depth,
+                                  et_n_estimators, et_max_depth, et_min_split):
         if not n_clicks or not stored_pca_json:
             return no_update
 
-        try:
-            pca_df = pd.read_json(io.StringIO(stored_pca_json), orient='split')
+        def int_or(v, d):
+            try:
+                return d if v in (None, '') else int(v)
+            except Exception:
+                return d
 
+        def float_or(v, d):
+            try:
+                return d if v in (None, '') else float(v)
+            except Exception:
+                return d
+
+        # Default / sanitizzazione
+        n_train = int_or(n_train, 180)
+        w_size = int_or(w_size, 20)
+        pen_value = int_or(pen_value, 1)
+        num_models = int_or(num_models, 10)
+
+        # (Iperparametri letti ma non applicati ai modelli esistenti senza modificare logic/)
+        _ = {
+            'rf': dict(
+                n_estimators=int_or(rf_n_estimators, 100),
+                max_depth=int_or(rf_max_depth, 10),
+                min_samples_split=int_or(rf_min_split, 2)
+            ),
+            'gb': dict(
+                n_estimators=int_or(gb_n_estimators, 100),
+                learning_rate=float_or(gb_learning_rate, 0.1),
+                max_depth=int_or(gb_max_depth, 3)
+            ),
+            'et': dict(
+                n_estimators=int_or(et_n_estimators, 100),
+                max_depth=int_or(et_max_depth, 10),
+                min_samples_split=int_or(et_min_split, 2)
+            )
+        }
+
+        if n_train < 30:
+            return html.Div("n troppo basso (>=30).", style={'color': 'red'})
+        if w_size < 3:
+            return html.Div("w troppo basso (>=3).", style={'color': 'red'})
+
+        try:
+            import logic.anomaly_detection as ad_mod
+            original_calc = ad_mod.calculate_variable_thresholds
+
+            # Monkey patch per usare pen personalizzato
+            def _calc_with_custom_pen(errors, pen=pen_value):
+                return original_calc(errors, pen=pen_value)
+
+            ad_mod.calculate_variable_thresholds = _calc_with_custom_pen
+
+            pca_df = pd.read_json(io.StringIO(stored_pca_json), orient='split')
+            if n_train >= len(pca_df) - w_size - 5:
+                return html.Div("n troppo grande rispetto alla lunghezza dei dati.", style={'color': 'red'})
+
+            # Branch modelli
             if model_name == "linreg":
-                models, *_ = train_linear_regression(pca_df)
-                figs, _, _ = detect_anomalies_linear(pca_df, models)
+                models, *_ = train_linear_regression(pca_df, n=n_train, w=w_size)
+                figs, *_ = detect_anomalies_linear(pca_df, models, n=n_train, w=w_size)
 
             elif model_name == "linreg_bagging":
-                models, *_ = train_linear_regression_bagging(pca_df)
-                figs, *_ = detect_anomalies_linear_bagging(pca_df, models)
+                models, *_ = train_linear_regression_bagging(pca_df, n=n_train, w=w_size, num_models=num_models)
+                figs, *_ = detect_anomalies_linear_bagging(pca_df, models, n=n_train, w=w_size)
 
             elif model_name == "rf_bagging":
-                models, *_ = train_random_forest_bagging(pca_df)
-                figs, *_ = detect_anomalies_random_forest_bagging(pca_df, models)
+                models, *_ = train_random_forest_bagging(pca_df, n=n_train, w=w_size, num_models=num_models)
+                figs, *_ = detect_anomalies_random_forest_bagging(pca_df, models, n=n_train, w=w_size)
 
             elif model_name == "gb_bagging":
-                models, *_ = train_gradient_boosting_bagging(pca_df)
-                figs, *_ = detect_anomalies_gradient_boosting_bagging(pca_df, models)
+                models, *_ = train_gradient_boosting_bagging(pca_df, n=n_train, w=w_size, num_models=num_models)
+                figs, *_ = detect_anomalies_gradient_boosting_bagging(pca_df, models, n=n_train, w=w_size)
 
             elif model_name == "et_bagging":
-                models, *_ = train_extra_trees_bagging(pca_df)
-                figs, *_ = detect_anomalies_extra_trees_bagging(pca_df, models)
+                models, *_ = train_extra_trees_bagging(pca_df, n=n_train, w=w_size, num_models=num_models)
+                figs, *_ = detect_anomalies_extra_trees_bagging(pca_df, models, n=n_train, w=w_size)
 
             else:
-                return html.Div("Modello non ancora implementato.")
+                return html.Div("Modello non supportato.", style={'color': 'red'})
 
-            figs = [apply_light_theme(fig) for fig in figs]
-            return html.Div([dcc.Graph(figure=fig) for fig in figs])
+            figs = [apply_light_theme(f) for f in figs]
+            return html.Div([dcc.Graph(figure=f) for f in figs])
 
         except Exception as e:
             tb = traceback.format_exc()
             return html.Div([html.B("Errore anomaly detection:"), html.Pre(str(e)), html.Pre(tb)])
+        finally:
+            try:
+                import logic.anomaly_detection as ad_mod_final
+                if 'original_calc' in locals():
+                    ad_mod_final.calculate_variable_thresholds = original_calc
+            except Exception:
+                pass

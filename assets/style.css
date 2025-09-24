@@ -1,3 +1,5 @@
+/* assets/style.css */
+
 /* --- Body generale --- */
 body {
     background-color: #f5f5f7;
@@ -15,13 +17,13 @@ body {
     background-color: #ffffff;
     border-radius: 14px;
     border: 1px solid #e0e0e0;
-    box-shadow: 0 4px 15px rgba(187, 134, 252, 0.25); /* Ombra viola */
+    box-shadow: 0 4px 15px rgba(187, 134, 252, 0.25);
 }
 
 /* --- Titolo app e descrizione --- */
 .app-title {
     text-align: center;
-    color: #7a42ff;   /* Viola */
+    color: #7a42ff;
     margin-bottom: 10px;
     font-weight: 700;
     font-size: 28px;
@@ -48,7 +50,7 @@ body {
 
 /* --- Titoli pannelli --- */
 h3, .panel-title {
-    color: #7a42ff;  /* Viola */
+    color: #7a42ff;
     font-size: 20px;
     font-weight: 600;
     margin-bottom: 15px;
@@ -58,7 +60,7 @@ h3, .panel-title {
 .analyze-button,
 .proceed-button,
 .anomaly-button {
-    background-color: #7a42ff;   /* Viola */
+    background-color: #7a42ff;
     color: #fff;
     padding: 12px 24px;
     font-size: 15px;
@@ -68,16 +70,23 @@ h3, .panel-title {
     cursor: pointer;
     display: block;
     margin: 20px auto 0 auto;
-    transition: background-color 0.3s ease;
+    transition: background-color 0.3s ease, transform 0.05s ease;
     width: 90%;
     max-width: 280px;
     text-align: center;
+    box-shadow: 0 2px 8px rgba(122, 66, 255, 0.25);
 }
 
 .analyze-button:hover,
 .proceed-button:hover,
 .anomaly-button:hover {
-    background-color: #5e32cc;   /* Viola più scuro */
+    background-color: #5e32cc;
+}
+
+.analyze-button:active,
+.proceed-button:active,
+.anomaly-button:active {
+    transform: translateY(1px);
 }
 
 /* --- Upload box --- */
@@ -116,11 +125,100 @@ h3, .panel-title {
     color: #333;
     font-weight: 600;
     white-space: nowrap;
-    box-shadow: 0 0 6px rgba(122, 66, 255, 0.35); /* Ombra pillole viola */
+    box-shadow: 0 0 6px rgba(122, 66, 255, 0.35);
 }
 
 /* --- Numero di componenti PCA --- */
 #num-components-container {
     color: #333;
     margin-top: 15px;
+}
+
+/* --- Gruppi parametri --- */
+.param-group {
+    background: #fafafa;
+    border: 1px solid #eee;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+}
+
+.param-group h5 {
+    margin: 0 0 8px 0;
+    color: #7a42ff;
+    font-weight: 700;
+}
+
+/* --- Campi parametri Anomaly --- */
+#anomaly-parameters label {
+    display: inline-block;
+    min-width: 180px;
+    margin: 6px 8px 6px 0;
+    color: #333;
+    font-weight: 600;
+}
+
+#anomaly-parameters input[type="number"],
+#anomaly-parameters input[type="text"] {
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    color: #222;
+    background-color: #fff;
+    outline: none;
+}
+
+#anomaly-parameters input[type="number"]:focus,
+#anomaly-parameters input[type="text"]:focus {
+    border-color: #7a42ff;
+    box-shadow: 0 0 0 3px rgba(122, 66, 255, 0.15);
+}
+
+/* --- Dropdown (dcc.Dropdown / react-select) --- */
+.Select-control {
+    border-color: #ddd !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    min-height: 38px !important;
+}
+
+.Select-control:hover {
+    border-color: #c9b2ff !important;
+}
+
+.is-focused:not(.is-open) > .Select-control {
+    border-color: #7a42ff !important;
+    box-shadow: 0 0 0 3px rgba(122, 66, 255, 0.15) !important;
+}
+
+.Select-menu-outer {
+    border-color: #ddd !important;
+    border-radius: 8px !important;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.08) !important;
+}
+
+.Select-option.is-focused {
+    background: #f1eaff !important;
+}
+
+.Select-option.is-selected {
+    background: #7a42ff !important;
+    color: #fff !important;
+}
+
+/* --- Checklist margini --- */
+#preprocessing-options,
+#pca-toggle {
+    margin: 6px 12px 0 0;
+}
+
+/* --- Reattività --- */
+@media (max-width: 600px) {
+    #anomaly-parameters label {
+        min-width: 140px;
+    }
+    .box {
+        margin: 12px;
+        padding: 18px 16px;
+    }
 }
