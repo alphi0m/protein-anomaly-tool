@@ -1,5 +1,3 @@
-# python
-# app/layout.py
 from dash import html, dcc
 
 layout = html.Div([
@@ -103,7 +101,7 @@ layout = html.Div([
         ),
         html.Div(id='clustering-parameters', style={'marginTop': '10px'}),
         html.Button(
-            "Procedi a Clustering",
+            "Esegui il Clustering",
             id='proceed-button',
             n_clicks=0,
             className="proceed-button",
@@ -119,6 +117,21 @@ layout = html.Div([
     # === BOX 4: Anomaly Detection ===
     html.Div([
         html.H4("Anomaly Detection", className="panel-title"),
+
+        # Nuovo: selezione categoria
+        html.Label("Categoria modello:"),
+        dcc.Dropdown(
+            id='anomaly-category',
+            options=[
+                {'label': 'Regressione', 'value': 'regression'},
+                {'label': 'Distanza', 'value': 'distance'},
+            ],
+            value='regression',
+            clearable=False,
+            style={'marginBottom': '10px'}
+        ),
+
+        # Esistente: dropdown algoritmi (verrà popolato dinamicamente in futuro)
         html.Label("Seleziona algoritmo di anomaly detection:"),
         dcc.Dropdown(
             id='anomaly-algorithm',
@@ -128,6 +141,9 @@ layout = html.Div([
                 {'label': 'Random Forest + Bagging', 'value': 'rf_bagging'},
                 {'label': 'Gradient Boosting + Bagging', 'value': 'gb_bagging'},
                 {'label': 'Extra Trees + Bagging', 'value': 'et_bagging'},
+                # Le nuove voci verranno iniettate via callback:
+                # {'label': 'Local Outlier Factor (LOF)', 'value': 'lof'}
+                # {'label': 'Matrix Profile (STUMP)', 'value': 'matrix_profile'}
             ],
             value='linreg',
             clearable=False
@@ -172,7 +188,7 @@ layout = html.Div([
                 ),
             ], id='params-common', className='param-group', style={'marginBottom': '15px'}),
 
-            # Gruppo parametri bagging
+            # Gruppo parametri bagging (esistente)
             html.Div([
                 html.H5("Bagging"),
                 html.Label("Numero modelli:"),
@@ -297,6 +313,39 @@ layout = html.Div([
                     placeholder='es. 2'
                 ),
             ], id='params-et', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
+
+            # Nuovo: Local Outlier Factor
+            html.Div([
+                html.H5("LOF"),
+                html.Label("N neighbors:"),
+                dcc.Input(
+                    id='lof-n-neighbors',
+                    type='number',
+                    min=1,
+                    step=1,
+                    value=20,
+                    style={'width': '120px'},
+                    placeholder='es. 20'
+                ),
+                html.Br(),
+                html.Label("Contamination:"),
+                dcc.Input(
+                    id='lof-contamination',
+                    type='number',
+                    min=0.001,
+                    max=0.5,
+                    step=0.01,
+                    value=0.05,
+                    style={'width': '120px'},
+                    placeholder='es. 0.05'
+                ),
+            ], id='params-lof', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
+
+            # Nuovo: Matrix Profile (solo informativo)
+            html.Div([
+                html.H5("Matrix Profile"),
+                html.P("Nessun parametro aggiuntivo richiesto.", style={'margin': 0, 'fontSize': '13px', 'color': '#555'})
+            ], id='params-mp', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
 
         ], id='anomaly-parameters', style={'marginTop': '10px'}),
 

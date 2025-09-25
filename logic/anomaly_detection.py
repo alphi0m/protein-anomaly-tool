@@ -1,533 +1,488 @@
+# python
+# logic/anomaly_detection.py
 import numpy as np
+import pandas as pd
 import joblib
 import ruptures as rpt
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor, ExtraTreesRegressor
+import warnings
+from typing import List, Tuple, Dict, Any
 from sklearn.linear_model import LinearRegression
-from sklearn.utils import resample
+from sklearn.ensemble import (
+    GradientBoostingRegressor,
+    RandomForestRegressor,
+    ExtraTreesRegressor
+)
+from sklearn.neighbors import LocalOutlierFactor
 import plotly.graph_objs as go
 
+warnings.filterwarnings("ignore", category=UserWarning)
 
-# ===============================
-# Funzioni generali
-# ===============================
+# ======================================================
+# Utilità interne
+# ======================================================
 
-def create_features_and_target(data, window_size):
-    """Crea feature X e target y da una serie temporale usando finestre scorrevoli."""
+def _to_float_array(a) -> np.ndarray:
+    if a is None:
+        return np.array([], dtype=float)
+    arr = np.asarray(a)
+    if arr.dtype == object:
+        # forza conversione, ignora elementi non convertibili
+        arr = arr.astype(float, copy=False)
+    else:
+        arr = arr.astype(float, copy=False)
+    return arr
+
+
+def _extract_pc_columns(df: pd.DataFrame) -> List[str]:
+    return [c for c in df.columns if c.upper().startswith("PC")]
+
+
+def _ensure_time_column(df: pd.DataFrame) -> pd.Series:
+    if 'Time' in df.columns:
+        return df['Time']
+    return pd.Series(range(len(df)), name='Time')
+
+
+def _build_window_matrix(series: np.ndarray, w: int, end: int = None) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    X: finestre (i-w:i) per i in [w, end)
+    y: valore series[i]
+    """
+    if end is None:
+        end = len(series)
     X, y = [], []
-    for i in range(len(data) - window_size):
-        X.append(data[i:i + window_size])
-        y.append(data[i + window_size])
-    return np.array(X), np.array(y)
+    for i in range(w, end):
+        X.append(series[i - w:i])
+        y.append(series[i])
+    if not X:
+        return np.empty((0, w), dtype=float), np.empty((0,), dtype=float)
+    return np.asarray(X, dtype=float), np.asarray(y, dtype=float)
 
 
-def create_features(data, window_size):
-    """Crea solo feature X (senza target) da una serie temporale."""
-    X = []
-    for i in range(len(data) - window_size):
-        X.append(data[i:i + window_size])
-    return np.array(X)
+def _compute_fixed_threshold(errors_train: np.ndarray) -> float:
+    errors_train = _to_float_array(errors_train)
+    if errors_train.size == 0:
+        return 0.0
+    return float(np.mean(errors_train) + 3.0 * np.std(errors_train))
 
 
-def calculate_variable_thresholds(errors, pen=1):
-    """Calcola soglie variabili con segmentazione tramite PELT (ruptures)."""
-    errors = np.array(errors).reshape(-1, 1)
-    algo = rpt.Pelt(model="l2", min_size=10)
-    algo.fit(errors)
-    result = algo.predict(pen=pen)
+def calculate_variable_thresholds(errors: np.ndarray, pen: int = 1) -> np.ndarray:
+    errors = _to_float_array(errors)
+    if errors.size == 0:
+        return np.array([], dtype=float)
+    if np.allclose(errors, errors[0]):
+        return np.full_like(errors, errors[0] + 1e-6)
 
-    variable_thresholds = np.zeros_like(errors)
+    try:
+        algo = rpt.Pelt(model="rbf").fit(errors)
+        bkps = algo.predict(pen=pen)
+    except Exception:
+        bkps = [len(errors)]
+
+    var_thr = np.zeros_like(errors)
     start = 0
-    for cp in result:
-        segment = errors[start:cp]
-        threshold = np.mean(segment) + 3 * np.std(segment)
-        variable_thresholds[start:cp] = threshold
-        start = cp
-    return variable_thresholds.flatten(), result
+    for b in bkps:
+        seg = errors[start:b]
+        if seg.size == 0:
+            thr_val = 0.0
+        else:
+            mean_seg = float(np.mean(seg))
+            std_seg = float(np.std(seg))
+            thr_val = mean_seg + 3.0 * std_seg
+        var_thr[start:b] = thr_val
+        start = b
+    return var_thr
 
 
-def _pc_columns(pca_df):
-    """Ritorna le colonne PC presenti (tra PC1, PC2, PC3) per robustezza."""
-    return [pc for pc in ['PC1', 'PC2', 'PC3'] if pc in pca_df.columns]
+def _generate_figures_per_pc(time_idx: np.ndarray,
+                             pc_series: np.ndarray,
+                             errors: np.ndarray,
+                             fixed_thr: float,
+                             var_thr: np.ndarray,
+                             pc_name: str) -> List[go.Figure]:
+    errors = _to_float_array(errors)
+    var_thr = _to_float_array(var_thr)
+    if var_thr.size != errors.size:
+        var_thr = np.full_like(errors, fixed_thr)
+    squared_errors = errors ** 2
+    anomalies = errors > var_thr
 
+    # Figura 1: errori + soglie
+    fig1 = go.Figure()
+    fig1.add_trace(go.Scatter(x=time_idx, y=errors, mode='lines', name='Errore'))
+    fig1.add_trace(go.Scatter(x=time_idx, y=[fixed_thr] * len(errors),
+                              mode='lines', name='Soglia Fissa', line=dict(dash='dash')))
+    fig1.add_trace(go.Scatter(x=time_idx, y=var_thr,
+                              mode='lines', name='Soglia Variabile', line=dict(dash='dot')))
+    fig1.update_layout(title=f"{pc_name} - Errori")
 
-# ===============================
-# Linear Regression
-# ===============================
+    # Figura 2: squared errors
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=time_idx, y=squared_errors, mode='lines', name='Errore^2'))
+    fig2.add_trace(go.Scatter(x=time_idx, y=[fixed_thr ** 2] * len(errors),
+                              mode='lines', name='(Soglia Fissa)^2', line=dict(dash='dash')))
+    fig2.add_trace(go.Scatter(x=time_idx, y=var_thr ** 2,
+                              mode='lines', name='(Soglia Var)^2', line=dict(dash='dot')))
+    fig2.update_layout(title=f"{pc_name} - Squared Errors")
 
-def train_linear_regression(pca_df, n=180, w=20):
+    # Figura 3: serie + anomalie
+    fig3 = go.Figure()
+    full_time = np.arange(len(pc_series))
+    fig3.add_trace(go.Scatter(x=full_time, y=pc_series, mode='lines', name=pc_name))
+    if errors.size > 0:
+        rng = np.ptp(errors)
+        if rng < 1e-12:
+            rng = 1.0
+        norm_err = (errors - np.min(errors)) / (rng + 1e-9)
+        scaled_err = norm_err * (np.ptp(pc_series) * 0.25 if np.ptp(pc_series) > 0 else 1.0) + np.min(pc_series)
+        # allineamento: assumiamo time_idx riferito a posizioni di predizione
+        fig3.add_trace(go.Scatter(x=time_idx, y=scaled_err,
+                                  mode='lines', name='Errore (scalato)', line=dict(color='orange')))
+        anomaly_time = time_idx[anomalies]
+        anomaly_vals = pc_series[anomaly_time]
+        fig3.add_trace(go.Scatter(x=anomaly_time, y=anomaly_vals,
+                                  mode='markers', marker=dict(color='red', size=6),
+                                  name='Anomalie'))
+    fig3.update_layout(title=f"{pc_name} - Serie & Anomalie")
+
+    return [fig1, fig2, fig3]
+
+# ======================================================
+# Modelli di Regressione
+# ======================================================
+
+def train_linear_regression(df: pd.DataFrame, n: int, w: int):
+    pc_cols = _extract_pc_columns(df)
     models = {}
-    train_thresholds = {}
-    train_squared_thresholds = {}
-
-    for pc in _pc_columns(pca_df):
-        X, y = create_features_and_target(pca_df[pc][:n].values, w)
-        model = LinearRegression()
-        model.fit(X, y)
-        joblib.dump(model, f'model_lr_{pc}.joblib')
-        models[pc] = model
-
-        errors, sq_errors = [], []
-        for X_window, real_value in zip(X, y):
-            y_pred = model.predict([X_window])[0]
-            errors.append(abs(real_value - y_pred))
-            sq_errors.append((real_value - y_pred) ** 2)
-
-        train_thresholds[pc] = np.mean(errors) + 3 * np.std(errors)
-        train_squared_thresholds[pc] = np.mean(sq_errors) + 3 * np.std(sq_errors)
-
-    return models, train_thresholds, train_squared_thresholds
-
-
-def detect_anomalies_linear(pca_df, models, n=180, w=20):
-    test_time = np.arange(n, len(pca_df))
-    prediction_errors = {pc: [] for pc in _pc_columns(pca_df)}
-    squared_errors = {pc: [] for pc in _pc_columns(pca_df)}
-    variable_thresholds = {}
-    variable_squared_thresholds = {}
-
-    for pc in _pc_columns(pca_df):
-        model = models.get(pc, joblib.load(f'model_lr_{pc}.joblib'))
-        test_features = create_features(pca_df[pc][n - w:].values, w)
-
-        for i in range(len(test_features)):
-            X_window = test_features[i]
-            y_true = pca_df[pc][n + i]
-            y_pred = model.predict([X_window])[0]
-            prediction_errors[pc].append(abs(y_true - y_pred))
-            squared_errors[pc].append((y_true - y_pred) ** 2)
-
-        variable_thresholds[pc], _ = calculate_variable_thresholds(prediction_errors[pc])
-        variable_squared_thresholds[pc], _ = calculate_variable_thresholds(squared_errors[pc])
-
-    figs = []
-    for pc in _pc_columns(pca_df):
-        fig_error = go.Figure()
-        fig_error.add_trace(go.Scatter(x=test_time, y=prediction_errors[pc], mode='lines', name=f'Error {pc}'))
-        fig_error.add_trace(go.Scatter(x=test_time, y=variable_thresholds[pc], mode='lines',
-                                       name='Variable Threshold', line=dict(dash='dot')))
-        fig_error.update_layout(title=f"Prediction Error {pc}", xaxis_title="Time", yaxis_title="Error")
-        figs.append(fig_error)
-
-        fig_sq_error = go.Figure()
-        fig_sq_error.add_trace(go.Scatter(x=test_time, y=squared_errors[pc], mode='lines', name=f'Squared Error {pc}'))
-        fig_sq_error.add_trace(go.Scatter(x=test_time, y=variable_squared_thresholds[pc], mode='lines',
-                                          name='Variable Threshold', line=dict(dash='dot')))
-        fig_sq_error.update_layout(title=f"Squared Error {pc}", xaxis_title="Time", yaxis_title="Squared Error")
-        figs.append(fig_sq_error)
-
-    return figs, prediction_errors, squared_errors
-
-
-# -------------------------
-# Linear Regression + Bagging
-# -------------------------
-
-def train_linear_regression_bagging(pca_df, n=180, w=20, num_models=10):
-    all_models = {pc: [] for pc in _pc_columns(pca_df)}
-    train_thresholds = {}
-    train_squared_thresholds = {}
-
-    for pc in _pc_columns(pca_df):
-        X, y = create_features_and_target(pca_df[pc][:n].values, w)
-        for _ in range(num_models):
-            X_resampled, y_resampled = resample(X, y)
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+        end_train = min(n, len(series))
+        X, y = _build_window_matrix(series, w, end=end_train)
+        if X.shape[0] > 0:
             model = LinearRegression()
-            model.fit(X_resampled, y_resampled)
-            all_models[pc].append(model)
-
-        errors, sq_errors = [], []
-        for X_window, real_value in zip(X, y):
-            preds = [m.predict([X_window])[0] for m in all_models[pc]]
-            mean_pred = np.mean(preds)
-            errors.append(abs(mean_pred - real_value))
-            sq_errors.append((mean_pred - real_value) ** 2)
-
-        train_thresholds[pc] = np.mean(errors) + 3 * np.std(errors)
-        train_squared_thresholds[pc] = np.mean(sq_errors) + 3 * np.std(sq_errors)
-
-    return all_models, train_thresholds, train_squared_thresholds
+            model.fit(X, y)
+            models[pc] = model
+        else:
+            models[pc] = None
+    return models, {"type": "linreg", "n": n, "w": w}
 
 
-def detect_anomalies_linear_bagging(pca_df, all_models, n=180, w=20):
-    prediction_errors = {pc: [] for pc in _pc_columns(pca_df)}
-    squared_errors = {pc: [] for pc in _pc_columns(pca_df)}
-    thresholds = {}
-    squared_thresholds = {}
-    variable_thresholds = {}
-    variable_squared_thresholds = {}
-    predictions = {pc: [] for pc in _pc_columns(pca_df)}
-    prediction_intervals = {pc: [] for pc in _pc_columns(pca_df)}
+def detect_anomalies_linear(df: pd.DataFrame, models: Dict[str, Any], n: int, w: int):
+    pc_cols = _extract_pc_columns(df)
+    time_full = _ensure_time_column(df)
+    figs_all, errors_all, thresholds_all = [], {}, {}
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+        model = models.get(pc)
+        preds, idxs = [], []
+        if model is not None:
+            for i in range(w, len(series)):
+                x = series[i - w:i].reshape(1, -1)
+                preds.append(model.predict(x)[0])
+                idxs.append(i)
+        preds = np.asarray(preds, dtype=float)
+        real = series[w:]
+        if preds.size != real.size:
+            errors = np.array([], dtype=float)
+            idxs = []
+        else:
+            errors = np.abs(real - preds)
+        train_cut = max(0, min(errors.size, n - w))
+        train_errors = errors[:train_cut]
+        fixed_thr = _compute_fixed_threshold(train_errors)
+        var_thr = calculate_variable_thresholds(errors, pen=1)
+        errors_all[pc] = errors
+        thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
+        time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.arange(w, len(series))
+        figs = _generate_figures_per_pc(
+            time_idx=time_idx,
+            pc_series=series,
+            errors=errors,
+            fixed_thr=fixed_thr,
+            var_thr=var_thr,
+            pc_name=pc
+        )
+        figs_all.extend(figs)
+    return figs_all, errors_all, thresholds_all
 
-    test_time = np.arange(n, len(pca_df))
+# ======================================================
+# Linear Regression + Bagging
+# ======================================================
 
-    for pc in _pc_columns(pca_df):
-        test_features = create_features(pca_df[pc][n - w:].values, w)
-        for i, X_window in enumerate(test_features):
-            preds = [m.predict([X_window])[0] for m in all_models[pc]]
-            mean_pred = float(np.mean(preds))
-            lower_bound = float(np.percentile(preds, 2.5))
-            upper_bound = float(np.percentile(preds, 97.5))
-            real_value = float(pca_df[pc][n + i])
-
-            predictions[pc].append(mean_pred)
-            prediction_intervals[pc].append((lower_bound, upper_bound))
-            prediction_errors[pc].append(abs(mean_pred - real_value))
-            squared_errors[pc].append((mean_pred - real_value) ** 2)
-
-        thresholds[pc] = np.mean(prediction_errors[pc]) + 3 * np.std(prediction_errors[pc])
-        squared_thresholds[pc] = np.mean(squared_errors[pc]) + 3 * np.std(squared_errors[pc])
-        variable_thresholds[pc], _ = calculate_variable_thresholds(prediction_errors[pc])
-        variable_squared_thresholds[pc], _ = calculate_variable_thresholds(squared_errors[pc])
-
-    figs = []
-    for pc in _pc_columns(pca_df):
-        fig_err = go.Figure()
-        fig_err.add_trace(go.Scatter(x=test_time, y=prediction_errors[pc], mode='lines', name='Prediction Error'))
-        fig_err.add_trace(go.Scatter(x=test_time, y=variable_thresholds[pc], mode='lines',
-                                     name='Variable Threshold', line=dict(dash='dash')))
-        fig_err.add_hline(y=thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_err.update_layout(title=f'Prediction Error - {pc}', xaxis_title='Time', yaxis_title='Error')
-        figs.append(fig_err)
-
-        fig_sq = go.Figure()
-        fig_sq.add_trace(go.Scatter(x=test_time, y=squared_errors[pc], mode='lines', name='Squared Error'))
-        fig_sq.add_trace(go.Scatter(x=test_time, y=variable_squared_thresholds[pc], mode='lines',
-                                    name='Variable Threshold', line=dict(dash='dash')))
-        fig_sq.add_hline(y=squared_thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_sq.update_layout(title=f'Squared Error - {pc}', xaxis_title='Time', yaxis_title='Squared Error')
-        figs.append(fig_sq)
-
-        lower_bounds = [interval[0] for interval in prediction_intervals[pc]]
-        upper_bounds = [interval[1] for interval in prediction_intervals[pc]]
-        fig_pred = go.Figure()
-        fig_pred.add_trace(go.Scatter(x=test_time, y=predictions[pc], mode='lines', name='Mean Prediction'))
-        fig_pred.add_trace(go.Scatter(x=test_time, y=pca_df[pc][n:].values, mode='lines', name='Real', line=dict(color='red')))
-        fig_pred.add_trace(go.Scatter(x=np.concatenate([test_time, test_time[::-1]]),
-                                      y=np.concatenate([lower_bounds, upper_bounds[::-1]]),
-                                      fill='toself', fillcolor='rgba(128,128,128,0.3)',
-                                      line=dict(color='rgba(255,255,255,0)'),
-                                      name='Prediction Interval'))
-        fig_pred.update_layout(title=f'Prediction with Interval - {pc}', xaxis_title='Time', yaxis_title='Value')
-        figs.append(fig_pred)
-
-    return (figs, prediction_errors, squared_errors, thresholds, squared_thresholds,
-            variable_thresholds, variable_squared_thresholds, predictions, prediction_intervals)
+def train_linear_regression_bagging(df: pd.DataFrame, n: int, w: int,
+                                    num_models: int = 10, random_state: int = 42):
+    rng = np.random.default_rng(random_state)
+    pc_cols = _extract_pc_columns(df)
+    bag_models = {}
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+        end_train = min(n, len(series))
+        X, y = _build_window_matrix(series, w, end=end_train)
+        models_pc = []
+        if X.shape[0] > 0:
+            for _ in range(num_models):
+                # bootstrap
+                idx = rng.integers(0, X.shape[0], X.shape[0])
+                m = LinearRegression()
+                m.fit(X[idx], y[idx])
+                models_pc.append(m)
+        bag_models[pc] = models_pc
+    return bag_models, {"type": "linreg_bagging", "n": n, "w": w, "num_models": num_models}
 
 
-# -------------------------
-# Random Forest Regression + Bagging
-# -------------------------
+def detect_anomalies_linear_bagging(df: pd.DataFrame, bag_models: Dict[str, List[Any]], n: int, w: int):
+    pc_cols = _extract_pc_columns(df)
+    time_full = _ensure_time_column(df)
+    figs_all, errors_all, thresholds_all = [], {}, {}
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+        models_pc = bag_models.get(pc, [])
+        preds, idxs = [], []
+        if models_pc:
+            for i in range(w, len(series)):
+                x = series[i - w:i].reshape(1, -1)
+                p = np.mean([m.predict(x)[0] for m in models_pc])
+                preds.append(p)
+                idxs.append(i)
+        preds = np.asarray(preds, dtype=float)
+        real = series[w:]
+        if preds.size != real.size:
+            errors = np.array([], dtype=float)
+            idxs = []
+        else:
+            errors = np.abs(real - preds)
+        train_cut = max(0, min(errors.size, n - w))
+        train_errors = errors[:train_cut]
+        fixed_thr = _compute_fixed_threshold(train_errors)
+        var_thr = calculate_variable_thresholds(errors, pen=1)
+        errors_all[pc] = errors
+        thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
+        time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.arange(w, len(series))
+        figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
+        figs_all.extend(figs)
+    return figs_all, errors_all, thresholds_all
 
-def train_random_forest_bagging(
-    pca_df,
-    n=180,
-    w=20,
-    num_models=10,
-    n_estimators=100,
-    max_depth=10,
-    min_samples_split=2
-):
-    all_models = {pc: [] for pc in _pc_columns(pca_df)}
-    train_thresholds = {}
-    train_squared_thresholds = {}
+# ======================================================
+# Alberi + Bagging (RF / GB / ET)
+# ======================================================
 
-    for pc in _pc_columns(pca_df):
-        X, y = create_features_and_target(pca_df[pc][:n].values, w)
-        for _ in range(num_models):
-            X_res, y_res = resample(X, y)
-            model = RandomForestRegressor(
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-                min_samples_split=min_samples_split,
-                n_jobs=-1,
-                random_state=None
-            )
-            model.fit(X_res, y_res)
-            all_models[pc].append(model)
-
-        pred_errors, sq_errors = [], []
-        for X_window, real_val in zip(X, y):
-            preds = [m.predict([X_window])[0] for m in all_models[pc]]
-            mean_pred = float(np.mean(preds))
-            pred_errors.append(abs(mean_pred - float(real_val)))
-            sq_errors.append((float(real_val) - mean_pred) ** 2)
-
-        train_thresholds[pc] = np.mean(pred_errors) + 3 * np.std(pred_errors)
-        train_squared_thresholds[pc] = np.mean(sq_errors) + 3 * np.std(sq_errors)
-
-    return all_models, train_thresholds, train_squared_thresholds
-
-
-def detect_anomalies_random_forest_bagging(pca_df, all_models, n=180, w=20):
-    prediction_errors = {pc: [] for pc in _pc_columns(pca_df)}
-    squared_errors = {pc: [] for pc in _pc_columns(pca_df)}
-    thresholds, squared_thresholds = {}, {}
-    variable_thresholds, variable_squared_thresholds = {}, {}
-    predictions = {pc: [] for pc in _pc_columns(pca_df)}
-    prediction_intervals = {pc: [] for pc in _pc_columns(pca_df)}
-    test_time = np.arange(n, len(pca_df))
-
-    for pc in _pc_columns(pca_df):
-        test_features_pc = create_features(pca_df[pc][n - w:].values, w)
-        for i, X_window in enumerate(test_features_pc):
-            preds = [m.predict([X_window])[0] for m in all_models[pc]]
-            mean_pred = float(np.mean(preds))
-            lb = float(np.percentile(preds, 2.5))
-            ub = float(np.percentile(preds, 97.5))
-            real_val = float(pca_df[pc][n + i])
-
-            predictions[pc].append(mean_pred)
-            prediction_intervals[pc].append((lb, ub))
-            prediction_errors[pc].append(abs(mean_pred - real_val))
-            squared_errors[pc].append((real_val - mean_pred) ** 2)
-
-        thresholds[pc] = np.mean(prediction_errors[pc]) + 3 * np.std(prediction_errors[pc])
-        squared_thresholds[pc] = np.mean(squared_errors[pc]) + 3 * np.std(squared_errors[pc])
-        variable_thresholds[pc], _ = calculate_variable_thresholds(prediction_errors[pc])
-        variable_squared_thresholds[pc], _ = calculate_variable_thresholds(squared_errors[pc])
-
-    figs = []
-    for pc in _pc_columns(pca_df):
-        fig_err = go.Figure()
-        fig_err.add_trace(go.Scatter(x=test_time, y=prediction_errors[pc], mode='lines', name='Prediction Error'))
-        fig_err.add_trace(go.Scatter(x=test_time, y=variable_thresholds[pc], mode='lines',
-                                     name='Variable Threshold', line=dict(dash='dash')))
-        fig_err.add_hline(y=thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_err.update_layout(title=f'Prediction Error - {pc}', xaxis_title='Time', yaxis_title='Error')
-        figs.append(fig_err)
-
-        fig_sq = go.Figure()
-        fig_sq.add_trace(go.Scatter(x=test_time, y=squared_errors[pc], mode='lines', name='Squared Error'))
-        fig_sq.add_trace(go.Scatter(x=test_time, y=variable_squared_thresholds[pc], mode='lines',
-                                    name='Variable Threshold', line=dict(dash='dash')))
-        fig_sq.add_hline(y=squared_thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_sq.update_layout(title=f'Squared Error - {pc}', xaxis_title='Time', yaxis_title='Squared Error')
-        figs.append(fig_sq)
-
-        lower_bounds = [interval[0] for interval in prediction_intervals[pc]]
-        upper_bounds = [interval[1] for interval in prediction_intervals[pc]]
-        fig_pred = go.Figure()
-        fig_pred.add_trace(go.Scatter(x=test_time, y=predictions[pc], mode='lines', name='Mean Prediction'))
-        fig_pred.add_trace(go.Scatter(x=test_time, y=pca_df[pc][n:], mode='lines', name='Real', line=dict(color='red')))
-        fig_pred.add_trace(go.Scatter(x=np.concatenate([test_time, test_time[::-1]]),
-                                      y=np.concatenate([lower_bounds, upper_bounds[::-1]]),
-                                      fill='toself', fillcolor='rgba(128,128,128,0.3)',
-                                      line=dict(color='rgba(255,255,255,0)'),
-                                      name='Prediction Interval'))
-        fig_pred.update_layout(title=f'Prediction with Interval - {pc}', xaxis_title='Time', yaxis_title='Value')
-        figs.append(fig_pred)
-
-    return (figs, prediction_errors, squared_errors, thresholds, squared_thresholds,
-            variable_thresholds, variable_squared_thresholds, predictions, prediction_intervals)
+def _train_tree_bagging(df: pd.DataFrame, n: int, w: int, num_models: int,
+                        model_cls, model_kwargs: Dict[str, Any], seed: int = 123):
+    rng = np.random.default_rng(seed)
+    pc_cols = _extract_pc_columns(df)
+    bag_models = {}
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+        end_train = min(n, len(series))
+        X, y = _build_window_matrix(series, w, end=end_train)
+        models_pc = []
+        if X.shape[0] > 0:
+            for _ in range(num_models):
+                idx = rng.integers(0, X.shape[0], X.shape[0])
+                m = model_cls(**model_kwargs)
+                m.fit(X[idx], y[idx])
+                models_pc.append(m)
+        bag_models[pc] = models_pc
+    return bag_models
 
 
-# -------------------------
-# Gradient Boosting + Bagging
-# -------------------------
-
-def train_gradient_boosting_bagging(
-    pca_df,
-    n=180,
-    w=20,
-    num_models=10,
-    n_estimators=100,
-    learning_rate=0.1,
-    max_depth=3
-):
-    all_models = {pc: [] for pc in _pc_columns(pca_df)}
-    train_thresholds = {}
-    train_squared_thresholds = {}
-
-    for pc in _pc_columns(pca_df):
-        X, y = create_features_and_target(pca_df[pc][:n].values, w)
-        for _ in range(num_models):
-            X_res, y_res = resample(X, y)
-            model = GradientBoostingRegressor(
-                n_estimators=n_estimators,
-                learning_rate=learning_rate,
-                max_depth=max_depth,
-                random_state=None
-            )
-            model.fit(X_res, y_res)
-            all_models[pc].append(model)
-
-        pred_errors, sq_errors = [], []
-        for X_window, real_val in zip(X, y):
-            preds = [m.predict([X_window])[0] for m in all_models[pc]]
-            mean_pred = float(np.mean(preds))
-            pred_errors.append(abs(mean_pred - float(real_val)))
-            sq_errors.append((float(real_val) - mean_pred) ** 2)
-
-        train_thresholds[pc] = np.mean(pred_errors) + 3 * np.std(pred_errors)
-        train_squared_thresholds[pc] = np.mean(sq_errors) + 3 * np.std(sq_errors)
-
-    return all_models, train_thresholds, train_squared_thresholds
+def _detect_tree_bagging(df: pd.DataFrame, bag_models: Dict[str, List[Any]], n: int, w: int):
+    pc_cols = _extract_pc_columns(df)
+    time_full = _ensure_time_column(df)
+    figs_all, errors_all, thresholds_all = [], {}, {}
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+        models_pc = bag_models.get(pc, [])
+        preds, idxs = [], []
+        if models_pc:
+            for i in range(w, len(series)):
+                x = series[i - w:i].reshape(1, -1)
+                p = np.mean([m.predict(x)[0] for m in models_pc])
+                preds.append(p)
+                idxs.append(i)
+        preds = np.asarray(preds, dtype=float)
+        real = series[w:]
+        if preds.size != real.size:
+            errors = np.array([], dtype=float)
+            idxs = []
+        else:
+            errors = np.abs(real - preds)
+        train_cut = max(0, min(errors.size, n - w))
+        train_errors = errors[:train_cut]
+        fixed_thr = _compute_fixed_threshold(train_errors)
+        var_thr = calculate_variable_thresholds(errors, pen=1)
+        errors_all[pc] = errors
+        thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
+        time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.arange(w, len(series))
+        figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
+        figs_all.extend(figs)
+    return figs_all, errors_all, thresholds_all
 
 
-def detect_anomalies_gradient_boosting_bagging(pca_df, all_models, n=180, w=20):
-    prediction_errors = {pc: [] for pc in _pc_columns(pca_df)}
-    squared_errors = {pc: [] for pc in _pc_columns(pca_df)}
-    thresholds, squared_thresholds = {}, {}
-    variable_thresholds, variable_squared_thresholds = {}, {}
-    predictions = {pc: [] for pc in _pc_columns(pca_df)}
-    prediction_intervals = {pc: [] for pc in _pc_columns(pca_df)}
-    test_time = np.arange(n, len(pca_df))
-
-    for pc in _pc_columns(pca_df):
-        test_features_pc = create_features(pca_df[pc][n - w:].values, w)
-        for i, X_window in enumerate(test_features_pc):
-            preds = [m.predict([X_window])[0] for m in all_models[pc]]
-            mean_pred = float(np.mean(preds))
-            lb = float(np.percentile(preds, 2.5))
-            ub = float(np.percentile(preds, 97.5))
-            real_val = float(pca_df[pc][n + i])
-
-            predictions[pc].append(mean_pred)
-            prediction_intervals[pc].append((lb, ub))
-            prediction_errors[pc].append(abs(mean_pred - real_val))
-            squared_errors[pc].append((real_val - mean_pred) ** 2)
-
-        thresholds[pc] = np.mean(prediction_errors[pc]) + 3 * np.std(prediction_errors[pc])
-        squared_thresholds[pc] = np.mean(squared_errors[pc]) + 3 * np.std(squared_errors[pc])
-        variable_thresholds[pc], _ = calculate_variable_thresholds(prediction_errors[pc])
-        variable_squared_thresholds[pc], _ = calculate_variable_thresholds(squared_errors[pc])
-
-    figs = []
-    for pc in _pc_columns(pca_df):
-        fig_err = go.Figure()
-        fig_err.add_trace(go.Scatter(x=test_time, y=prediction_errors[pc], mode='lines', name='Prediction Error'))
-        fig_err.add_trace(go.Scatter(x=test_time, y=variable_thresholds[pc], mode='lines',
-                                     name='Variable Threshold', line=dict(dash='dash')))
-        fig_err.add_hline(y=thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_err.update_layout(title=f'Prediction Error - {pc}', xaxis_title='Time', yaxis_title='Error')
-        figs.append(fig_err)
-
-        fig_sq = go.Figure()
-        fig_sq.add_trace(go.Scatter(x=test_time, y=squared_errors[pc], mode='lines', name='Squared Error'))
-        fig_sq.add_trace(go.Scatter(x=test_time, y=variable_squared_thresholds[pc], mode='lines',
-                                    name='Variable Threshold', line=dict(dash='dash')))
-        fig_sq.add_hline(y=squared_thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_sq.update_layout(title=f'Squared Error - {pc}', xaxis_title='Time', yaxis_title='Squared Error')
-        figs.append(fig_sq)
-
-        lower_bounds = [interval[0] for interval in prediction_intervals[pc]]
-        upper_bounds = [interval[1] for interval in prediction_intervals[pc]]
-        fig_pred = go.Figure()
-        fig_pred.add_trace(go.Scatter(x=test_time, y=predictions[pc], mode='lines', name='Mean Prediction'))
-        fig_pred.add_trace(go.Scatter(x=test_time, y=pca_df[pc][n:], mode='lines', name='Real', line=dict(color='red')))
-        fig_pred.add_trace(go.Scatter(x=np.concatenate([test_time, test_time[::-1]]),
-                                      y=np.concatenate([lower_bounds, upper_bounds[::-1]]),
-                                      fill='toself', fillcolor='rgba(128,128,128,0.3)',
-                                      line=dict(color='rgba(255,255,255,0)'),
-                                      name='Prediction Interval'))
-        fig_pred.update_layout(title=f'Prediction with Interval - {pc}', xaxis_title='Time', yaxis_title='Value')
-        figs.append(fig_pred)
-
-    return (figs, prediction_errors, squared_errors, thresholds, squared_thresholds,
-            variable_thresholds, variable_squared_thresholds, predictions, prediction_intervals)
+def train_random_forest_bagging(df: pd.DataFrame, n: int, w: int, num_models: int = 10,
+                                n_estimators: int = 100, max_depth: int = 10, min_samples_split: int = 2):
+    models = _train_tree_bagging(
+        df, n, w, num_models,
+        RandomForestRegressor,
+        dict(n_estimators=n_estimators, max_depth=max_depth, min_samples_split=min_samples_split, random_state=None)
+    )
+    return models, {"type": "rf_bagging", "n": n, "w": w}
 
 
-# -------------------------
-# Extra Trees Regressor + Bagging
-# -------------------------
-
-def train_extra_trees_bagging(
-    pca_df,
-    n=180,
-    w=20,
-    num_models=10,
-    n_estimators=100,
-    max_depth=10,
-    min_samples_split=2
-):
-    models = {pc: [] for pc in _pc_columns(pca_df)}
-    train_thresholds = {}
-    train_squared_thresholds = {}
-
-    for pc in _pc_columns(pca_df):
-        X, y = create_features_and_target(pca_df[pc][:n].values, w)
-        for _ in range(num_models):
-            X_res, y_res = resample(X, y)
-            model = ExtraTreesRegressor(
-                n_estimators=n_estimators,
-                max_depth=max_depth,
-                min_samples_split=min_samples_split,
-                n_jobs=-1,
-                random_state=None
-            )
-            model.fit(X_res, y_res)
-            models[pc].append(model)
-
-        pred_errors, sq_errors = [], []
-        for X_window, real_val in zip(X, y):
-            preds = [m.predict([X_window])[0] for m in models[pc]]
-            mean_pred = float(np.mean(preds))
-            pred_errors.append(abs(mean_pred - float(real_val)))
-            sq_errors.append((float(real_val) - mean_pred) ** 2)
-
-        train_thresholds[pc] = np.mean(pred_errors) + 3 * np.std(pred_errors)
-        train_squared_thresholds[pc] = np.mean(sq_errors) + 3 * np.std(sq_errors)
-
-    return models, train_thresholds, train_squared_thresholds
+def detect_anomalies_random_forest_bagging(df: pd.DataFrame, models: Dict[str, List[Any]], n: int, w: int):
+    return _detect_tree_bagging(df, models, n, w)
 
 
-def detect_anomalies_extra_trees_bagging(pca_df, all_models, n=180, w=20):
-    prediction_errors = {pc: [] for pc in _pc_columns(pca_df)}
-    squared_errors = {pc: [] for pc in _pc_columns(pca_df)}
-    predictions = {pc: [] for pc in _pc_columns(pca_df)}
-    prediction_intervals = {pc: [] for pc in _pc_columns(pca_df)}
-    thresholds, squared_thresholds, variable_thresholds, variable_squared_thresholds = {}, {}, {}, {}
-    test_time = np.arange(n, len(pca_df))
+def train_gradient_boosting_bagging(df: pd.DataFrame, n: int, w: int, num_models: int = 10,
+                                    n_estimators: int = 100, learning_rate: float = 0.1, max_depth: int = 3):
+    models = _train_tree_bagging(
+        df, n, w, num_models,
+        GradientBoostingRegressor,
+        dict(n_estimators=n_estimators, learning_rate=learning_rate, max_depth=max_depth, random_state=None)
+    )
+    return models, {"type": "gb_bagging", "n": n, "w": w}
 
-    for pc in _pc_columns(pca_df):
-        test_features_pc = create_features(pca_df[pc][n - w:].values, w)
-        for i, X_window in enumerate(test_features_pc):
-            preds = [m.predict([X_window])[0] for m in all_models[pc]]
-            mean_pred = float(np.mean(preds))
-            lb = float(np.percentile(preds, 2.5))
-            ub = float(np.percentile(preds, 97.5))
-            real_val = float(pca_df[pc][n + i])
 
-            predictions[pc].append(mean_pred)
-            prediction_intervals[pc].append((lb, ub))
-            prediction_errors[pc].append(abs(mean_pred - real_val))
-            squared_errors[pc].append((real_val - mean_pred) ** 2)
+def detect_anomalies_gradient_boosting_bagging(df: pd.DataFrame, models: Dict[str, List[Any]], n: int, w: int):
+    return _detect_tree_bagging(df, models, n, w)
 
-        thresholds[pc] = np.mean(prediction_errors[pc]) + 3 * np.std(prediction_errors[pc])
-        squared_thresholds[pc] = np.mean(squared_errors[pc]) + 3 * np.std(squared_errors[pc])
-        variable_thresholds[pc], _ = calculate_variable_thresholds(prediction_errors[pc])
-        variable_squared_thresholds[pc], _ = calculate_variable_thresholds(squared_errors[pc])
 
-    figs = []
-    for pc in _pc_columns(pca_df):
-        fig_err = go.Figure()
-        fig_err.add_trace(go.Scatter(x=test_time, y=prediction_errors[pc], mode='lines', name='Prediction Error'))
-        fig_err.add_trace(go.Scatter(x=test_time, y=variable_thresholds[pc], mode='lines',
-                                     name='Variable Threshold', line=dict(dash='dash')))
-        fig_err.add_hline(y=thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_err.update_layout(title=f'Prediction Error - {pc}', xaxis_title='Time', yaxis_title='Error')
-        figs.append(fig_err)
+def train_extra_trees_bagging(df: pd.DataFrame, n: int, w: int, num_models: int = 10,
+                              n_estimators: int = 100, max_depth: int = 10, min_samples_split: int = 2):
+    models = _train_tree_bagging(
+        df, n, w, num_models,
+        ExtraTreesRegressor,
+        dict(n_estimators=n_estimators, max_depth=max_depth, min_samples_split=min_samples_split, random_state=None)
+    )
+    return models, {"type": "et_bagging", "n": n, "w": w}
 
-        fig_sq = go.Figure()
-        fig_sq.add_trace(go.Scatter(x=test_time, y=squared_errors[pc], mode='lines', name='Squared Error'))
-        fig_sq.add_trace(go.Scatter(x=test_time, y=variable_squared_thresholds[pc], mode='lines',
-                                    name='Variable Threshold', line=dict(dash='dash')))
-        fig_sq.add_hline(y=squared_thresholds[pc], line=dict(color='red', dash='dot'), annotation_text='Fixed Threshold')
-        fig_sq.update_layout(title=f'Squared Error - {pc}', xaxis_title='Time', yaxis_title='Squared Error')
-        figs.append(fig_sq)
 
-        lower_bounds = [interval[0] for interval in prediction_intervals[pc]]
-        upper_bounds = [interval[1] for interval in prediction_intervals[pc]]
-        fig_pred = go.Figure()
-        fig_pred.add_trace(go.Scatter(x=test_time, y=predictions[pc], mode='lines', name='Mean Prediction'))
-        fig_pred.add_trace(go.Scatter(x=test_time, y=pca_df[pc][n:], mode='lines', name='Real', line=dict(color='red')))
-        fig_pred.add_trace(go.Scatter(x=np.concatenate([test_time, test_time[::-1]]),
-                                      y=np.concatenate([lower_bounds, upper_bounds[::-1]]),
-                                      fill='toself', fillcolor='rgba(128,128,128,0.3)',
-                                      line=dict(color='rgba(255,255,255,0)'),
-                                      name='Prediction Interval'))
-        fig_pred.update_layout(title=f'Prediction with Intervals - {pc}', xaxis_title='Time', yaxis_title='Value')
-        figs.append(fig_pred)
+def detect_anomalies_extra_trees_bagging(df: pd.DataFrame, models: Dict[str, List[Any]], n: int, w: int):
+    return _detect_tree_bagging(df, models, n, w)
 
-    return (figs, prediction_errors, squared_errors, thresholds, squared_thresholds,
-            variable_thresholds, variable_squared_thresholds, predictions, prediction_intervals)
+# ======================================================
+# Local Outlier Factor
+# ======================================================
+
+def train_lof(df: pd.DataFrame, n: int, w: int,
+              n_neighbors: int = 20, contamination: float = 0.05):
+    pc_cols = _extract_pc_columns(df)
+    models = {}
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+        end_train = min(n, len(series))
+        windows = []
+        for i in range(w, end_train):
+            windows.append(series[i - w:i])
+        X = np.asarray(windows, dtype=float)
+        if X.shape[0] == 0:
+            models[pc] = None
+            continue
+        nn = min(n_neighbors, max(2, X.shape[0] - 1))
+        if nn < 2:
+            models[pc] = None
+            continue
+        lof = LocalOutlierFactor(n_neighbors=nn,
+                                 contamination=contamination,
+                                 novelty=True)
+        lof.fit(X)
+        models[pc] = lof
+    return models, {"type": "lof", "n": n, "w": w,
+                    "n_neighbors": n_neighbors, "contamination": contamination}
+
+
+def detect_anomalies_lof(df: pd.DataFrame, models: Dict[str, Any], n: int, w: int):
+    pc_cols = _extract_pc_columns(df)
+    time_full = _ensure_time_column(df)
+    figs_all, errors_all, thresholds_all = [], {}, {}
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+        model = models.get(pc)
+        windows, idxs = [], []
+        for i in range(w, len(series)):
+            windows.append(series[i - w:i])
+            idxs.append(i)
+        if not windows or model is None:
+            errors = np.array([], dtype=float)
+            fixed_thr = 0.0
+            var_thr = np.array([], dtype=float)
+            time_idx = np.array([], dtype=int)
+        else:
+            Xw = np.asarray(windows, dtype=float)
+            # decision_function: valori >0 normali; usiamo errore = -score
+            scores = model.decision_function(Xw)
+            errors = -_to_float_array(scores)
+            train_cut = max(0, min(errors.size, n - w))
+            train_errors = errors[:train_cut]
+            fixed_thr = _compute_fixed_threshold(train_errors)
+            var_thr = calculate_variable_thresholds(errors, pen=1)
+            time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.array(idxs)
+        errors_all[pc] = errors
+        thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
+        figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
+        figs_all.extend(figs)
+    return figs_all, errors_all, thresholds_all
+
+# ======================================================
+# Matrix Profile (STUMP)
+# ======================================================
+
+def detect_matrix_profile(df: pd.DataFrame, n: int, w: int):
+    try:
+        import stumpy
+    except ImportError as e:
+        raise ImportError("Per usare il Matrix Profile installare 'stumpy' (pip install stumpy).") from e
+
+    pc_cols = _extract_pc_columns(df)
+    time_full = _ensure_time_column(df)
+    figs_all, errors_all, thresholds_all = [], {}, {}
+
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+        if len(series) < w + 2:
+            mp_vals = np.array([], dtype=float)
+            fixed_thr = 0.0
+            var_thr = np.array([], dtype=float)
+            time_idx = np.array([], dtype=int)
+        else:
+            # stumpy.stump restituisce (len(series)-w+1, 4+)
+            mp = stumpy.stump(series, m=w)
+            mp_vals = _to_float_array(mp[:, 0])
+            # sostituiamo NaN (serie costante) con 0
+            if np.isnan(mp_vals).any():
+                mp_vals = np.nan_to_num(mp_vals, nan=0.0, posinf=np.nanmax(mp_vals[np.isfinite(mp_vals)] + 1.0 if np.isfinite(mp_vals).any() else 1.0), neginf=0.0)
+            # Le distanze più alte = più anomale -> usiamo direttamente mp_vals come errors
+            L = mp_vals.size
+            # allineamento: primo profilo corrisponde alla finestra che termina a indice w-1
+            # usiamo l'indice della fine della finestra (w-1 ... w-1+L-1)
+            end_indices = np.arange(w - 1, w - 1 + L)
+            time_idx = time_full.iloc[end_indices].values if len(time_full) == len(series) else end_indices
+            # parte di training: finestre che terminano prima di n
+            train_mask = end_indices < n
+            train_errors = mp_vals[train_mask]
+            fixed_thr = _compute_fixed_threshold(train_errors)
+            var_thr = calculate_variable_thresholds(mp_vals, pen=1)
+        errors_all[pc] = mp_vals
+        thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
+        figs = _generate_figures_per_pc(
+            time_idx=time_idx,
+            pc_series=series,
+            errors=mp_vals,
+            fixed_thr=fixed_thr,
+            var_thr=var_thr if var_thr.size == mp_vals.size else np.full_like(mp_vals, fixed_thr),
+            pc_name=pc
+        )
+        figs_all.extend(figs)
+
+    return figs_all, errors_all, thresholds_all
+
+# ======================================================
+# Salvataggio / Caricamento
+# ======================================================
+
+def save_models(models: Dict[str, Any], path: str):
+    joblib.dump(models, path)
+
+
+def load_models(path: str) -> Dict[str, Any]:
+    return joblib.load(path)
