@@ -1,5 +1,3 @@
-# python
-# logic/anomaly_detection.py
 import numpy as np
 import pandas as pd
 import joblib
@@ -482,7 +480,5 @@ def detect_matrix_profile(df: pd.DataFrame, n: int, w: int):
 
 def save_models(models: Dict[str, Any], path: str):
     joblib.dump(models, path)
-
-
 def load_models(path: str) -> Dict[str, Any]:
     return joblib.load(path)

@@ -26,7 +26,7 @@ layout = html.Div([
             ]),
             style={
                 'width': '100%',
-                'height': '130px',
+                'height': '250px',
                 'lineHeight': '20px',
                 'borderWidth': '2px',
                 'borderStyle': 'dashed',

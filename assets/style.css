@@ -11,13 +11,20 @@ body {
 
 /* --- Contenitore box generici --- */
 .box {
-    max-width: 800px;
+    width: 80%;
+    max-width: 1600px;
     margin: 20px auto;
     padding: 25px 30px;
     background-color: #ffffff;
     border-radius: 14px;
     border: 1px solid #e0e0e0;
     box-shadow: 0 4px 15px rgba(187, 134, 252, 0.25);
+}
+
+@media (max-width: 900px){
+    .box {
+        width: 90%;
+    }
 }
 
 /* --- Titolo app e descrizione --- */
@@ -91,6 +98,11 @@ h3, .panel-title {
 
 /* --- Upload box --- */
 .dash-uploader {
+    box-sizing: border-box;     /* evita sbordo del bordo tratteggiato */
+    width: 100%;
+    max-width: 100%;
+    display: block;
+    overflow: hidden;
     background-color: #faf7ff;
     color: #7a42ff;
     border: 2px dashed #7a42ff;
@@ -111,19 +123,30 @@ h3, .panel-title {
 #file-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 8px 10px;
+    align-content: flex-start;
+    width: 100%;
     margin-top: 10px;
     list-style: none;
-    padding-left: 0;
-    overflow-x: auto;
+    padding: 8px 10px;
+    max-height: 160px;      /* scroll verticale */
+    overflow-y: auto;
+    overflow-x: hidden;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    background: #faf7ff;
 }
 
 #file-list li {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    height: 28px;
+    padding: 0 10px;
     background-color: #efe6ff;
-    border-radius: 15px;
-    padding: 6px 12px;
     color: #333;
     font-weight: 600;
+    border-radius: 999px;   /* effetto pill/cerchietto */
     white-space: nowrap;
     box-shadow: 0 0 6px rgba(122, 66, 255, 0.35);
 }
