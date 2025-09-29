@@ -11,7 +11,7 @@ body {
 
 /* --- Contenitore box generici --- */
 .box {
-    width: 80%;
+    width: 85%;
     max-width: 1600px;
     margin: 20px auto;
     padding: 25px 30px;

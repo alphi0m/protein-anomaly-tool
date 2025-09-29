@@ -1,9 +1,10 @@
+# python
 import numpy as np
 import pandas as pd
-import joblib
-import ruptures as rpt
 import warnings
 from typing import List, Tuple, Dict, Any
+
+import ruptures as rpt
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import (
     GradientBoostingRegressor,
@@ -16,19 +17,21 @@ import plotly.graph_objs as go
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # ======================================================
-# Utilità interne
+# Funzioni generiche
 # ======================================================
 
 def _to_float_array(a) -> np.ndarray:
     if a is None:
-        return np.array([], dtype=float)
+        return np.asarray([], dtype=float)
     arr = np.asarray(a)
+    if arr.size == 0:
+        return np.asarray([], dtype=float)
     if arr.dtype == object:
-        # forza conversione, ignora elementi non convertibili
-        arr = arr.astype(float, copy=False)
-    else:
-        arr = arr.astype(float, copy=False)
-    return arr
+        try:
+            return arr.astype(float)
+        except Exception:
+            return np.asarray([float(x) for x in arr], dtype=float)
+    return arr.astype(float, copy=False)
 
 
 def _extract_pc_columns(df: pd.DataFrame) -> List[str]:
@@ -37,15 +40,17 @@ def _extract_pc_columns(df: pd.DataFrame) -> List[str]:
 
 def _ensure_time_column(df: pd.DataFrame) -> pd.Series:
     if 'Time' in df.columns:
-        return df['Time']
+        return pd.Series(df['Time'].values, name='Time')
     return pd.Series(range(len(df)), name='Time')
 
 
 def _build_window_matrix(series: np.ndarray, w: int, end: int = None) -> Tuple[np.ndarray, np.ndarray]:
     """
-    X: finestre (i-w:i) per i in [w, end)
-    y: valore series[i]
+    Costruisce:
+      - X: finestre (series[i-w:i]) per i in [w, end)
+      - y: valore series[i]
     """
+    series = _to_float_array(series)
     if end is None:
         end = len(series)
     X, y = [], []
@@ -53,7 +58,7 @@ def _build_window_matrix(series: np.ndarray, w: int, end: int = None) -> Tuple[n
         X.append(series[i - w:i])
         y.append(series[i])
     if not X:
-        return np.empty((0, w), dtype=float), np.empty((0,), dtype=float)
+        return np.asarray([], dtype=float).reshape(0, w), np.asarray([], dtype=float)
     return np.asarray(X, dtype=float), np.asarray(y, dtype=float)
 
 
@@ -65,29 +70,33 @@ def _compute_fixed_threshold(errors_train: np.ndarray) -> float:
 
 
 def calculate_variable_thresholds(errors: np.ndarray, pen: int = 1) -> np.ndarray:
+    """
+    Soglia variabile per segmento: mean + 3*std su ogni segmento rilevato con PELT.
+    """
     errors = _to_float_array(errors)
-    if errors.size == 0:
-        return np.array([], dtype=float)
+    n = errors.size
+    if n == 0:
+        return np.asarray([], dtype=float)
     if np.allclose(errors, errors[0]):
-        return np.full_like(errors, errors[0] + 1e-6)
+        thr = float(errors[0] + 3.0 * 0.0)
+        return np.full(n, thr, dtype=float)
 
     try:
-        algo = rpt.Pelt(model="rbf").fit(errors)
+        algo = rpt.Pelt(model='l2').fit(errors)
         bkps = algo.predict(pen=pen)
     except Exception:
-        bkps = [len(errors)]
+        # fallback: nessuna segmentazione
+        return np.full(n, _compute_fixed_threshold(errors), dtype=float)
 
-    var_thr = np.zeros_like(errors)
+    var_thr = np.zeros(n, dtype=float)
     start = 0
     for b in bkps:
         seg = errors[start:b]
         if seg.size == 0:
-            thr_val = 0.0
+            thr = 0.0
         else:
-            mean_seg = float(np.mean(seg))
-            std_seg = float(np.std(seg))
-            thr_val = mean_seg + 3.0 * std_seg
-        var_thr[start:b] = thr_val
+            thr = float(np.mean(seg) + 3.0 * np.std(seg))
+        var_thr[start:b] = thr
         start = b
     return var_thr
 
@@ -101,7 +110,7 @@ def _generate_figures_per_pc(time_idx: np.ndarray,
     errors = _to_float_array(errors)
     var_thr = _to_float_array(var_thr)
     if var_thr.size != errors.size:
-        var_thr = np.full_like(errors, fixed_thr)
+        var_thr = np.full_like(errors, fill_value=_compute_fixed_threshold(errors))
     squared_errors = errors ** 2
     anomalies = errors > var_thr
 
@@ -109,18 +118,18 @@ def _generate_figures_per_pc(time_idx: np.ndarray,
     fig1 = go.Figure()
     fig1.add_trace(go.Scatter(x=time_idx, y=errors, mode='lines', name='Errore'))
     fig1.add_trace(go.Scatter(x=time_idx, y=[fixed_thr] * len(errors),
-                              mode='lines', name='Soglia Fissa', line=dict(dash='dash')))
+                              mode='lines', name='Soglia fissa', line=dict(dash='dash')))
     fig1.add_trace(go.Scatter(x=time_idx, y=var_thr,
-                              mode='lines', name='Soglia Variabile', line=dict(dash='dot')))
+                              mode='lines', name='Soglia variabile', line=dict(dash='dot')))
     fig1.update_layout(title=f"{pc_name} - Errori")
 
     # Figura 2: squared errors
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(x=time_idx, y=squared_errors, mode='lines', name='Errore^2'))
     fig2.add_trace(go.Scatter(x=time_idx, y=[fixed_thr ** 2] * len(errors),
-                              mode='lines', name='(Soglia Fissa)^2', line=dict(dash='dash')))
+                              mode='lines', name='Soglia fissa^2', line=dict(dash='dash')))
     fig2.add_trace(go.Scatter(x=time_idx, y=var_thr ** 2,
-                              mode='lines', name='(Soglia Var)^2', line=dict(dash='dot')))
+                              mode='lines', name='Soglia variabile^2', line=dict(dash='dot')))
     fig2.update_layout(title=f"{pc_name} - Squared Errors")
 
     # Figura 3: serie + anomalie
@@ -128,19 +137,20 @@ def _generate_figures_per_pc(time_idx: np.ndarray,
     full_time = np.arange(len(pc_series))
     fig3.add_trace(go.Scatter(x=full_time, y=pc_series, mode='lines', name=pc_name))
     if errors.size > 0:
-        rng = np.ptp(errors)
-        if rng < 1e-12:
-            rng = 1.0
-        norm_err = (errors - np.min(errors)) / (rng + 1e-9)
-        scaled_err = norm_err * (np.ptp(pc_series) * 0.25 if np.ptp(pc_series) > 0 else 1.0) + np.min(pc_series)
-        # allineamento: assumiamo time_idx riferito a posizioni di predizione
-        fig3.add_trace(go.Scatter(x=time_idx, y=scaled_err,
+        # ridimensiono gli errori per sovrapporli alla scala della serie
+        e = errors.copy()
+        s = pc_series
+        if np.std(e) > 1e-12 and np.std(s) > 1e-12:
+            e = (e - np.mean(e)) / (np.std(e) + 1e-12)
+            e = e * (np.std(s) * 0.5) + np.mean(s)
+        else:
+            e = e * 0.0 + np.mean(s)
+        fig3.add_trace(go.Scatter(x=time_idx, y=e,
                                   mode='lines', name='Errore (scalato)', line=dict(color='orange')))
         anomaly_time = time_idx[anomalies]
-        anomaly_vals = pc_series[anomaly_time]
+        anomaly_vals = np.take(pc_series, anomaly_time, mode='clip')
         fig3.add_trace(go.Scatter(x=anomaly_time, y=anomaly_vals,
-                                  mode='markers', marker=dict(color='red', size=6),
-                                  name='Anomalie'))
+                                  mode='markers', name='Anomalie', marker=dict(color='red', size=6)))
     fig3.update_layout(title=f"{pc_name} - Serie & Anomalie")
 
     return [fig1, fig2, fig3]
@@ -151,7 +161,7 @@ def _generate_figures_per_pc(time_idx: np.ndarray,
 
 def train_linear_regression(df: pd.DataFrame, n: int, w: int):
     pc_cols = _extract_pc_columns(df)
-    models = {}
+    models: Dict[str, Any] = {}
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
         end_train = min(n, len(series))
@@ -169,6 +179,7 @@ def detect_anomalies_linear(df: pd.DataFrame, models: Dict[str, Any], n: int, w:
     pc_cols = _extract_pc_columns(df)
     time_full = _ensure_time_column(df)
     figs_all, errors_all, thresholds_all = [], {}, {}
+
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
         model = models.get(pc)
@@ -176,12 +187,12 @@ def detect_anomalies_linear(df: pd.DataFrame, models: Dict[str, Any], n: int, w:
         if model is not None:
             for i in range(w, len(series)):
                 x = series[i - w:i].reshape(1, -1)
-                preds.append(model.predict(x)[0])
+                preds.append(float(model.predict(x)))
                 idxs.append(i)
         preds = np.asarray(preds, dtype=float)
         real = series[w:]
         if preds.size != real.size:
-            errors = np.array([], dtype=float)
+            errors = np.asarray([], dtype=float)
             idxs = []
         else:
             errors = np.abs(real - preds)
@@ -192,15 +203,9 @@ def detect_anomalies_linear(df: pd.DataFrame, models: Dict[str, Any], n: int, w:
         errors_all[pc] = errors
         thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
         time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.arange(w, len(series))
-        figs = _generate_figures_per_pc(
-            time_idx=time_idx,
-            pc_series=series,
-            errors=errors,
-            fixed_thr=fixed_thr,
-            var_thr=var_thr,
-            pc_name=pc
-        )
+        figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
+
     return figs_all, errors_all, thresholds_all
 
 # ======================================================
@@ -211,20 +216,26 @@ def train_linear_regression_bagging(df: pd.DataFrame, n: int, w: int,
                                     num_models: int = 10, random_state: int = 42):
     rng = np.random.default_rng(random_state)
     pc_cols = _extract_pc_columns(df)
-    bag_models = {}
+    bag_models: Dict[str, List[Any]] = {}
+
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
         end_train = min(n, len(series))
         X, y = _build_window_matrix(series, w, end=end_train)
-        models_pc = []
+        models_pc: List[Any] = []
         if X.shape[0] > 0:
+            n_samples = X.shape[0]
             for _ in range(num_models):
-                # bootstrap
-                idx = rng.integers(0, X.shape[0], X.shape[0])
+                if n_samples > 1:
+                    idx = rng.integers(0, n_samples, size=n_samples)
+                    Xb, yb = X[idx], y[idx]
+                else:
+                    Xb, yb = X, y
                 m = LinearRegression()
-                m.fit(X[idx], y[idx])
+                m.fit(Xb, yb)
                 models_pc.append(m)
         bag_models[pc] = models_pc
+
     return bag_models, {"type": "linreg_bagging", "n": n, "w": w, "num_models": num_models}
 
 
@@ -232,6 +243,7 @@ def detect_anomalies_linear_bagging(df: pd.DataFrame, bag_models: Dict[str, List
     pc_cols = _extract_pc_columns(df)
     time_full = _ensure_time_column(df)
     figs_all, errors_all, thresholds_all = [], {}, {}
+
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
         models_pc = bag_models.get(pc, [])
@@ -239,13 +251,13 @@ def detect_anomalies_linear_bagging(df: pd.DataFrame, bag_models: Dict[str, List
         if models_pc:
             for i in range(w, len(series)):
                 x = series[i - w:i].reshape(1, -1)
-                p = np.mean([m.predict(x)[0] for m in models_pc])
-                preds.append(p)
+                pred = np.mean([float(m.predict(x)) for m in models_pc])
+                preds.append(pred)
                 idxs.append(i)
         preds = np.asarray(preds, dtype=float)
         real = series[w:]
         if preds.size != real.size:
-            errors = np.array([], dtype=float)
+            errors = np.asarray([], dtype=float)
             idxs = []
         else:
             errors = np.abs(real - preds)
@@ -258,6 +270,7 @@ def detect_anomalies_linear_bagging(df: pd.DataFrame, bag_models: Dict[str, List
         time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.arange(w, len(series))
         figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
+
     return figs_all, errors_all, thresholds_all
 
 # ======================================================
@@ -268,19 +281,26 @@ def _train_tree_bagging(df: pd.DataFrame, n: int, w: int, num_models: int,
                         model_cls, model_kwargs: Dict[str, Any], seed: int = 123):
     rng = np.random.default_rng(seed)
     pc_cols = _extract_pc_columns(df)
-    bag_models = {}
+    bag_models: Dict[str, List[Any]] = {}
+
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
         end_train = min(n, len(series))
         X, y = _build_window_matrix(series, w, end=end_train)
-        models_pc = []
+        models_pc: List[Any] = []
         if X.shape[0] > 0:
+            n_samples = X.shape[0]
             for _ in range(num_models):
-                idx = rng.integers(0, X.shape[0], X.shape[0])
+                if n_samples > 1:
+                    idx = rng.integers(0, n_samples, size=n_samples)
+                    Xb, yb = X[idx], y[idx]
+                else:
+                    Xb, yb = X, y
                 m = model_cls(**model_kwargs)
-                m.fit(X[idx], y[idx])
+                m.fit(Xb, yb)
                 models_pc.append(m)
         bag_models[pc] = models_pc
+
     return bag_models
 
 
@@ -288,6 +308,7 @@ def _detect_tree_bagging(df: pd.DataFrame, bag_models: Dict[str, List[Any]], n: 
     pc_cols = _extract_pc_columns(df)
     time_full = _ensure_time_column(df)
     figs_all, errors_all, thresholds_all = [], {}, {}
+
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
         models_pc = bag_models.get(pc, [])
@@ -295,13 +316,13 @@ def _detect_tree_bagging(df: pd.DataFrame, bag_models: Dict[str, List[Any]], n: 
         if models_pc:
             for i in range(w, len(series)):
                 x = series[i - w:i].reshape(1, -1)
-                p = np.mean([m.predict(x)[0] for m in models_pc])
-                preds.append(p)
+                pred = np.mean([float(m.predict(x)) for m in models_pc])
+                preds.append(pred)
                 idxs.append(i)
         preds = np.asarray(preds, dtype=float)
         real = series[w:]
         if preds.size != real.size:
-            errors = np.array([], dtype=float)
+            errors = np.asarray([], dtype=float)
             idxs = []
         else:
             errors = np.abs(real - preds)
@@ -314,6 +335,7 @@ def _detect_tree_bagging(df: pd.DataFrame, bag_models: Dict[str, List[Any]], n: 
         time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.arange(w, len(series))
         figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
+
     return figs_all, errors_all, thresholds_all
 
 
@@ -365,26 +387,21 @@ def detect_anomalies_extra_trees_bagging(df: pd.DataFrame, models: Dict[str, Lis
 def train_lof(df: pd.DataFrame, n: int, w: int,
               n_neighbors: int = 20, contamination: float = 0.05):
     pc_cols = _extract_pc_columns(df)
-    models = {}
+    models: Dict[str, Any] = {}
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
         end_train = min(n, len(series))
-        windows = []
-        for i in range(w, end_train):
-            windows.append(series[i - w:i])
-        X = np.asarray(windows, dtype=float)
-        if X.shape[0] == 0:
+        X_train, _ = _build_window_matrix(series, w, end=end_train)
+        if X_train.shape[0] > 0:
+            model = LocalOutlierFactor(
+                n_neighbors=max(1, int(n_neighbors)),
+                contamination=float(contamination),
+                novelty=True
+            )
+            model.fit(X_train)
+            models[pc] = model
+        else:
             models[pc] = None
-            continue
-        nn = min(n_neighbors, max(2, X.shape[0] - 1))
-        if nn < 2:
-            models[pc] = None
-            continue
-        lof = LocalOutlierFactor(n_neighbors=nn,
-                                 contamination=contamination,
-                                 novelty=True)
-        lof.fit(X)
-        models[pc] = lof
     return models, {"type": "lof", "n": n, "w": w,
                     "n_neighbors": n_neighbors, "contamination": contamination}
 
@@ -392,33 +409,35 @@ def train_lof(df: pd.DataFrame, n: int, w: int,
 def detect_anomalies_lof(df: pd.DataFrame, models: Dict[str, Any], n: int, w: int):
     pc_cols = _extract_pc_columns(df)
     time_full = _ensure_time_column(df)
+
     figs_all, errors_all, thresholds_all = [], {}, {}
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
-        model = models.get(pc)
+        model: LocalOutlierFactor = models.get(pc)
         windows, idxs = [], []
         for i in range(w, len(series)):
             windows.append(series[i - w:i])
             idxs.append(i)
         if not windows or model is None:
-            errors = np.array([], dtype=float)
+            errors = np.asarray([], dtype=float)
+            time_idx = np.asarray([], dtype=float)
             fixed_thr = 0.0
-            var_thr = np.array([], dtype=float)
-            time_idx = np.array([], dtype=int)
+            var_thr = np.asarray([], dtype=float)
         else:
-            Xw = np.asarray(windows, dtype=float)
-            # decision_function: valori >0 normali; usiamo errore = -score
-            scores = model.decision_function(Xw)
-            errors = -_to_float_array(scores)
+            X = np.asarray(windows, dtype=float)
+            # LOF: score_samples restituisce log-likelihood inverso, usiamo negativo come errore
+            errors = -model.score_samples(X)
             train_cut = max(0, min(errors.size, n - w))
             train_errors = errors[:train_cut]
             fixed_thr = _compute_fixed_threshold(train_errors)
             var_thr = calculate_variable_thresholds(errors, pen=1)
-            time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.array(idxs)
+            time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.asarray(idxs)
+
         errors_all[pc] = errors
         thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
         figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
+
     return figs_all, errors_all, thresholds_all
 
 # ======================================================
@@ -426,59 +445,226 @@ def detect_anomalies_lof(df: pd.DataFrame, models: Dict[str, Any], n: int, w: in
 # ======================================================
 
 def detect_matrix_profile(df: pd.DataFrame, n: int, w: int):
+    """
+    Usa stumpy.stump per la matrix profile della singola serie PC.
+    Errore = matrix profile, soglie calcolate come per gli altri modelli.
+    """
     try:
-        import stumpy
-    except ImportError as e:
-        raise ImportError("Per usare il Matrix Profile installare 'stumpy' (pip install stumpy).") from e
+        import stumpy as stp
+    except Exception as e:
+        raise RuntimeError("Il pacchetto 'stumpy' è richiesto per Matrix Profile.") from e
 
     pc_cols = _extract_pc_columns(df)
-    time_full = _ensure_time_column(df)
     figs_all, errors_all, thresholds_all = [], {}, {}
 
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
         if len(series) < w + 2:
-            mp_vals = np.array([], dtype=float)
+            errors = np.asarray([], dtype=float)
             fixed_thr = 0.0
-            var_thr = np.array([], dtype=float)
-            time_idx = np.array([], dtype=int)
+            var_thr = np.asarray([], dtype=float)
+            time_idx = np.asarray([], dtype=float)
         else:
-            # stumpy.stump restituisce (len(series)-w+1, 4+)
-            mp = stumpy.stump(series, m=w)
-            mp_vals = _to_float_array(mp[:, 0])
-            # sostituiamo NaN (serie costante) con 0
-            if np.isnan(mp_vals).any():
-                mp_vals = np.nan_to_num(mp_vals, nan=0.0, posinf=np.nanmax(mp_vals[np.isfinite(mp_vals)] + 1.0 if np.isfinite(mp_vals).any() else 1.0), neginf=0.0)
-            # Le distanze più alte = più anomale -> usiamo direttamente mp_vals come errors
-            L = mp_vals.size
-            # allineamento: primo profilo corrisponde alla finestra che termina a indice w-1
-            # usiamo l'indice della fine della finestra (w-1 ... w-1+L-1)
-            end_indices = np.arange(w - 1, w - 1 + L)
-            time_idx = time_full.iloc[end_indices].values if len(time_full) == len(series) else end_indices
-            # parte di training: finestre che terminano prima di n
-            train_mask = end_indices < n
-            train_errors = mp_vals[train_mask]
+            mp = stp.stump(series, m=w)
+            # mp[:, 0] è la matrix profile; lunghezza = len(series) - w + 1
+            errors_full = _to_float_array(mp[:, 0])
+            # allineo agli indici [w, len(series)-1] => lunghezza = len(series) - w
+            errors = errors_full[:-1] if errors_full.size > 0 else errors_full
+            train_cut = max(0, min(errors.size, n - w))
+            train_errors = errors[:train_cut]
             fixed_thr = _compute_fixed_threshold(train_errors)
-            var_thr = calculate_variable_thresholds(mp_vals, pen=1)
-        errors_all[pc] = mp_vals
+            var_thr = calculate_variable_thresholds(errors, pen=1)
+            time_idx = np.arange(w, len(series))
+
+        errors_all[pc] = errors
         thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
-        figs = _generate_figures_per_pc(
-            time_idx=time_idx,
-            pc_series=series,
-            errors=mp_vals,
-            fixed_thr=fixed_thr,
-            var_thr=var_thr if var_thr.size == mp_vals.size else np.full_like(mp_vals, fixed_thr),
-            pc_name=pc
-        )
+        figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
 
     return figs_all, errors_all, thresholds_all
 
 # ======================================================
-# Salvataggio / Caricamento
+# Modelli basati su Clustering (DBSCAN / OPTICS / K-Means)
 # ======================================================
 
-def save_models(models: Dict[str, Any], path: str):
-    joblib.dump(models, path)
-def load_models(path: str) -> Dict[str, Any]:
-    return joblib.load(path)
+def detect_anomalies_dbscan(df: pd.DataFrame, n: int, w: int,
+                            eps: float = 0.25, min_samples: int = 15, knn_k: int | None = None):
+    """
+    Score densità tramite distanza al k-esimo vicino sui soli dati di training (k = min_samples se non specificato).
+    L'algoritmo DBSCAN non viene usato per le label, ma 'eps' resta utile come riferimento UI.
+    """
+    from sklearn.neighbors import NearestNeighbors
+
+    pc_cols = _extract_pc_columns(df)
+    time_full = _ensure_time_column(df)
+
+    figs_all, errors_all, thresholds_all = [], {}, {}
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+
+        windows, idxs = [], []
+        for i in range(w, len(series)):
+            windows.append(series[i - w:i])
+            idxs.append(i)
+
+        if not windows:
+            errors = np.asarray([], dtype=float)
+            fixed_thr = 0.0
+            var_thr = np.asarray([], dtype=float)
+            time_idx = np.asarray([], dtype=float)
+        else:
+            X_all = np.asarray(windows, dtype=float)
+            # training windows: finestre con indice di predizione < n
+            n_train_windows = max(0, min(X_all.shape[0], n - w))
+            X_train = X_all[:n_train_windows] if n_train_windows > 0 else None
+
+            k = int(knn_k if knn_k is not None else max(1, min_samples))
+            if X_train is None or X_train.shape[0] < k:
+                # non abbastanza vicini: fallback a distanza media delle k minori sul full
+                nbrs = NearestNeighbors(n_neighbors=min(k, max(1, X_all.shape[0]))).fit(X_all)
+                dists, _ = nbrs.kneighbors(X_all)
+                kth = dists[:, -1] if dists.ndim == 2 and dists.shape[1] > 0 else np.zeros(X_all.shape[0])
+                errors = _to_float_array(kth)
+                train_cut = max(0, min(errors.size, n - w))
+                train_errors = errors[:train_cut]
+            else:
+                nbrs = NearestNeighbors(n_neighbors=min(k, X_train.shape[0])).fit(X_train)
+                dists, _ = nbrs.kneighbors(X_all)
+                kth = dists[:, -1] if dists.ndim == 2 and dists.shape[1] > 0 else np.zeros(X_all.shape[0])
+                errors = _to_float_array(kth)
+                train_errors = errors[:n_train_windows]
+
+            fixed_thr = _compute_fixed_threshold(train_errors)
+            var_thr = calculate_variable_thresholds(errors, pen=1)
+            time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.asarray(idxs)
+
+        errors_all[pc] = errors
+        thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr, "eps_ref": float(eps)}
+        figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
+        figs_all.extend(figs)
+
+    return figs_all, errors_all, thresholds_all
+
+
+def detect_anomalies_optics(df: pd.DataFrame, n: int, w: int,
+                            min_samples: int = 5, xi: float = 0.01, min_cluster_size: float | int = 0.1):
+    """
+    Score densità basato su OPTICS: reachability\_ come errore (più alto => più anomalo).
+    Soglia fissa calcolata sugli errori delle sole finestre di training.
+    """
+    from sklearn.cluster import OPTICS
+
+    pc_cols = _extract_pc_columns(df)
+    time_full = _ensure_time_column(df)
+
+    figs_all, errors_all, thresholds_all = [], {}, {}
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+
+        windows, idxs = [], []
+        for i in range(w, len(series)):
+            windows.append(series[i - w:i])
+            idxs.append(i)
+
+        if not windows:
+            errors = np.asarray([], dtype=float)
+            fixed_thr = 0.0
+            var_thr = np.asarray([], dtype=float)
+            time_idx = np.asarray([], dtype=float)
+        else:
+            X_all = np.asarray(windows, dtype=float)
+            n_train_windows = max(0, min(X_all.shape[0], n - w))
+
+            optics = OPTICS(min_samples=max(2, int(min_samples)),
+                            xi=float(xi),
+                            min_cluster_size=min_cluster_size)
+            optics.fit(X_all)
+            # ricostruisco reachability per indice originale
+            reach = np.full(X_all.shape[0], np.inf, dtype=float)
+            reach[optics.ordering_] = optics.reachability_
+            # rimpiazzo inf con massimo finito
+            finite = reach[np.isfinite(reach)]
+            if finite.size == 0:
+                reach[:] = 0.0
+            else:
+                reach[~np.isfinite(reach)] = np.max(finite)
+            errors = _to_float_array(reach)
+
+            train_errors = errors[:n_train_windows]
+            fixed_thr = _compute_fixed_threshold(train_errors)
+            var_thr = calculate_variable_thresholds(errors, pen=1)
+            time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.asarray(idxs)
+
+        errors_all[pc] = errors
+        thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
+        figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
+        figs_all.extend(figs)
+
+    return figs_all, errors_all, thresholds_all
+
+
+def train_kmeans(df: pd.DataFrame, n: int, w: int, n_clusters: int = 3, random_state: int = 42):
+    """
+    Allena un K-Means per ciascuna PC sulle finestre dei primi n campioni.
+    """
+    from sklearn.cluster import KMeans
+    pc_cols = _extract_pc_columns(df)
+    models: Dict[str, Any] = {}
+
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+        windows = []
+        for i in range(w, min(n, len(series))):
+            windows.append(series[i - w:i])
+        X_train = np.asarray(windows, dtype=float)
+        if X_train.shape[0] == 0:
+            models[pc] = None
+            continue
+        k = int(max(1, n_clusters))
+        model = KMeans(n_clusters=k, n_init="auto", random_state=int(random_state))
+        model.fit(X_train)
+        models[pc] = model
+
+    return models, {"type": "kmeans", "n": n, "w": w, "n_clusters": n_clusters, "random_state": random_state}
+
+
+def detect_anomalies_kmeans(df: pd.DataFrame, models: Dict[str, Any], n: int, w: int):
+    """
+    Anomaly score = distanza al centroide più vicino per ciascuna finestra.
+    Soglie calcolate come per gli altri modelli.
+    """
+    pc_cols = _extract_pc_columns(df)
+    time_full = _ensure_time_column(df)
+
+    figs_all, errors_all, thresholds_all = [], {}, {}
+    for pc in pc_cols:
+        series = _to_float_array(df[pc].values)
+        model = models.get(pc)
+
+        windows, idxs = [], []
+        for i in range(w, len(series)):
+            windows.append(series[i - w:i])
+            idxs.append(i)
+
+        if not windows or model is None:
+            errors = np.asarray([], dtype=float)
+            fixed_thr = 0.0
+            var_thr = np.asarray([], dtype=float)
+            time_idx = np.asarray([], dtype=float)
+        else:
+            X_all = np.asarray(windows, dtype=float)
+            # distanza al centroide più vicino
+            dists = model.transform(X_all)  # shape: (n_samples, n_clusters)
+            errors = np.min(dists, axis=1)
+            train_cut = max(0, min(errors.size, n - w))
+            train_errors = errors[:train_cut]
+            fixed_thr = _compute_fixed_threshold(train_errors)
+            var_thr = calculate_variable_thresholds(errors, pen=1)
+            time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.asarray(idxs)
+
+        errors_all[pc] = errors
+        thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
+        figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
+        figs_all.extend(figs)
+
+    return figs_all, errors_all, thresholds_all

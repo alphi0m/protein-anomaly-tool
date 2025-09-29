@@ -125,13 +125,13 @@ layout = html.Div([
             options=[
                 {'label': 'Regressione', 'value': 'regression'},
                 {'label': 'Distanza', 'value': 'distance'},
+                {'label': 'Clustering', 'value': 'clustering'},
             ],
             value='regression',
             clearable=False,
             style={'marginBottom': '10px'}
         ),
 
-        # Esistente: dropdown algoritmi (verrà popolato dinamicamente in futuro)
         html.Label("Seleziona algoritmo di anomaly detection:"),
         dcc.Dropdown(
             id='anomaly-algorithm',
@@ -141,9 +141,6 @@ layout = html.Div([
                 {'label': 'Random Forest + Bagging', 'value': 'rf_bagging'},
                 {'label': 'Gradient Boosting + Bagging', 'value': 'gb_bagging'},
                 {'label': 'Extra Trees + Bagging', 'value': 'et_bagging'},
-                # Le nuove voci verranno iniettate via callback:
-                # {'label': 'Local Outlier Factor (LOF)', 'value': 'lof'}
-                # {'label': 'Matrix Profile (STUMP)', 'value': 'matrix_profile'}
             ],
             value='linreg',
             clearable=False
@@ -341,11 +338,110 @@ layout = html.Div([
                 ),
             ], id='params-lof', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
 
-            # Nuovo: Matrix Profile (solo informativo)
             html.Div([
                 html.H5("Matrix Profile"),
                 html.P("Nessun parametro aggiuntivo richiesto.", style={'margin': 0, 'fontSize': '13px', 'color': '#555'})
             ], id='params-mp', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
+
+            # python
+            # --- da inserire nella sezione "PARAMETRI DINAMICI MODELLI" dopo il gruppo LOF ---
+
+            # DBSCAN (clustering)
+            html.Div([
+                html.H5("DBSCAN"),
+                html.Label("eps:"),
+                dcc.Input(
+                    id='dbscan-eps',
+                    type='number',
+                    min=0,
+                    step=0.01,
+                    value=0.25,
+                    style={'width': '120px'},
+                    placeholder='es. 0.25'
+                ),
+                html.Br(),
+                html.Label("Numero min samples:"),
+                dcc.Input(
+                    id='dbscan-min-samples',
+                    type='number',
+                    min=1,
+                    step=1,
+                    value=15,
+                    style={'width': '120px'},
+                    placeholder='es. 15'
+                ),
+                html.Br(),
+                html.Label("k per kNN (opzionale):"),
+                dcc.Input(
+                    id='dbscan-knn-k',
+                    type='number',
+                    min=1,
+                    step=1,
+                    placeholder='auto',
+                    style={'width': '120px'}
+                ),
+            ], id='params-dbscan-clustering', className='param-group',
+                style={'display': 'none', 'marginBottom': '15px'}),
+
+            # OPTICS (clustering)
+            html.Div([
+                html.H5("OPTICS"),
+                html.Label("Numero min samples:"),
+                dcc.Input(
+                    id='optics-min-samples',
+                    type='number',
+                    min=2,
+                    step=1,
+                    value=5,
+                    style={'width': '120px'}
+                ),
+                html.Br(),
+                html.Label("xi:"),
+                dcc.Input(
+                    id='optics-xi',
+                    type='number',
+                    min=0.0,
+                    max=1.0,
+                    step=0.01,
+                    value=0.01,
+                    style={'width': '120px'}
+                ),
+                html.Br(),
+                html.Label("Dimensione minimo cluster:"),
+                dcc.Input(
+                    id='optics-min-cluster-size',
+                    type='number',
+                    min=0.0,
+                    step=0.05,
+                    value=0.1,
+                    style={'width': '120px'}
+                ),
+            ], id='params-optics-clustering', className='param-group',
+                style={'display': 'none', 'marginBottom': '15px'}),
+
+            # K-Means (clustering)
+            html.Div([
+                html.H5("K-Means"),
+                html.Label("Numero clusters:"),
+                dcc.Input(
+                    id='kmeans-n-clusters',
+                    type='number',
+                    min=1,
+                    step=1,
+                    value=3,
+                    style={'width': '120px'}
+                ),
+                html.Br(),
+                html.Label("Random state:"),
+                dcc.Input(
+                    id='kmeans-random-state',
+                    type='number',
+                    step=1,
+                    value=42,
+                    style={'width': '120px'}
+                ),
+            ], id='params-kmeans-clustering', className='param-group',
+                style={'display': 'none', 'marginBottom': '15px'}),
 
         ], id='anomaly-parameters', style={'marginTop': '10px'}),
 

@@ -1,4 +1,5 @@
 # python
+# file: 'app/callbacks.py'
 import base64
 import io
 import traceback
@@ -7,7 +8,6 @@ import pandas as pd
 from dash import Input, Output, State, html, dash_table, dcc, no_update
 import plotly.express as px
 import plotly.graph_objs as go
-from sklearn.preprocessing import StandardScaler
 
 from logic.pca_utils import compute_windowed_pca
 from logic.clustering_utils import dbscan_clustering, optics_clustering, spectral_clustering
@@ -17,11 +17,11 @@ from logic.anomaly_detection import (
     train_random_forest_bagging, detect_anomalies_random_forest_bagging,
     train_gradient_boosting_bagging, detect_anomalies_gradient_boosting_bagging,
     train_extra_trees_bagging, detect_anomalies_extra_trees_bagging,
-    # Nuovi (devono essere implementati)
     train_lof, detect_anomalies_lof,
-    detect_matrix_profile
+    detect_matrix_profile,
+    detect_anomalies_dbscan, detect_anomalies_optics,
+    train_kmeans, detect_anomalies_kmeans
 )
-
 
 def apply_light_theme(fig, title=None):
     fig.update_layout(
@@ -53,16 +53,28 @@ def register_callbacks(app):
                 {'label': 'Gradient Boosting + Bagging', 'value': 'gb_bagging'},
                 {'label': 'Extra Trees + Bagging', 'value': 'et_bagging'},
             ]
-        else:  # distance
+        elif category == 'distance':
             opts = [
                 {'label': 'Local Outlier Factor (LOF)', 'value': 'lof'},
                 {'label': 'Matrix Profile (STUMP)', 'value': 'matrix_profile'},
+            ]
+        elif category == 'clustering':
+            # --- nuove opzioni clustering-based ---
+            opts = [
+                {'label': 'DBSCAN (vector score)', 'value': 'dbscan_vector'},
+                {'label': 'OPTICS (reachability score)', 'value': 'optics_vector'},
+                {'label': 'K-Means (distance to centroid)', 'value': 'kmeans_vector'},
+            ]
+        else:
+            # fallback: mantieni sicurezza
+            opts = [
+                {'label': 'Linear Regression', 'value': 'linreg'}
             ]
         values = {o['value'] for o in opts}
         new_value = current_value if current_value in values else opts[0]['value']
         return opts, new_value
 
-    # --- Toggle gruppi parametri anomaly (aggiunti LOF / MP) ---
+    # --- Toggle gruppi parametri anomaly ---
     @app.callback(
         Output('params-bagging', 'style'),
         Output('params-rf', 'style'),
@@ -70,6 +82,10 @@ def register_callbacks(app):
         Output('params-et', 'style'),
         Output('params-lof', 'style'),
         Output('params-mp', 'style'),
+        # --- aggiunte: gruppi parametri clustering ---
+        Output('params-dbscan-clustering', 'style'),
+        Output('params-optics-clustering', 'style'),
+        Output('params-kmeans-clustering', 'style'),
         Input('anomaly-algorithm', 'value')
     )
     def toggle_anomaly_param_groups(algorithm):
@@ -84,7 +100,11 @@ def register_callbacks(app):
             style(algorithm == 'gb_bagging'),
             style(algorithm == 'et_bagging'),
             style(algorithm == 'lof'),
-            style(algorithm == 'matrix_profile')
+            style(algorithm == 'matrix_profile'),
+            # nuovi gruppi
+            style(algorithm == 'dbscan_vector'),
+            style(algorithm == 'optics_vector'),
+            style(algorithm == 'kmeans_vector'),
         )
 
     # --- Lista file caricati ---
@@ -307,7 +327,16 @@ def register_callbacks(app):
         State('et-min-split', 'value'),
         # LOF
         State('lof-n-neighbors', 'value'),
-        State('lof-contamination', 'value')
+        State('lof-contamination', 'value'),
+        # --- aggiunte: stati parametri clustering ---
+        State('dbscan-eps', 'value'),
+        State('dbscan-min-samples', 'value'),
+        State('dbscan-knn-k', 'value'),
+        State('optics-min-samples', 'value'),
+        State('optics-xi', 'value'),
+        State('optics-min-cluster-size', 'value'),
+        State('kmeans-n-clusters', 'value'),
+        State('kmeans-random-state', 'value'),
     )
     def perform_anomaly_detection(n_clicks, stored_pca_json, model_name,
                                   n_train, w_size, pen_value,
@@ -315,7 +344,10 @@ def register_callbacks(app):
                                   rf_n_estimators, rf_max_depth, rf_min_split,
                                   gb_n_estimators, gb_learning_rate, gb_max_depth,
                                   et_n_estimators, et_max_depth, et_min_split,
-                                  lof_n_neighbors, lof_contamination):
+                                  lof_n_neighbors, lof_contamination,
+                                  db_eps, db_min_samples, db_knn_k,
+                                  op_min_samples, op_xi, op_min_cluster_size,
+                                  km_n_clusters, km_random_state):
         if not n_clicks or not stored_pca_json:
             return no_update
 
@@ -354,6 +386,7 @@ def register_callbacks(app):
             if n_train >= len(pca_df) - w_size - 5:
                 return html.Div("n troppo grande rispetto ai dati.", style={'color': 'red'})
 
+            # --- Regressione e Bagging (esistente) ---
             if model_name == "linreg":
                 models, *_ = train_linear_regression(pca_df, n=n_train, w=w_size)
                 figs, *_ = detect_anomalies_linear(pca_df, models, n=n_train, w=w_size)
@@ -374,6 +407,7 @@ def register_callbacks(app):
                 models, *_ = train_extra_trees_bagging(pca_df, n=n_train, w=w_size, num_models=num_models)
                 figs, *_ = detect_anomalies_extra_trees_bagging(pca_df, models, n=n_train, w=w_size)
 
+            # --- Distanza (esistente) ---
             elif model_name == "lof":
                 n_neighbors = int_or(lof_n_neighbors, 20)
                 contamination = float_or(lof_contamination, 0.05)
@@ -383,8 +417,32 @@ def register_callbacks(app):
                 figs, *_ = detect_anomalies_lof(pca_df, models, n=n_train, w=w_size)
 
             elif model_name == "matrix_profile":
-                # Nessun training separato
                 figs, *_ = detect_matrix_profile(pca_df, n=n_train, w=w_size)
+
+            # --- Clustering-based (nuovi) ---
+            elif model_name == "dbscan_vector":
+                eps = float_or(db_eps, 0.25)
+                min_samples = int_or(db_min_samples, 15)
+                knn_k = None if db_knn_k in (None, '') else int_or(db_knn_k, None)
+                figs, *_ = detect_anomalies_dbscan(
+                    pca_df, n=n_train, w=w_size,
+                    eps=eps, min_samples=min_samples, knn_k=knn_k
+                )
+
+            elif model_name == "optics_vector":
+                min_s = int_or(op_min_samples, 5)
+                xi = float_or(op_xi, 0.01)
+                min_clu = float_or(op_min_cluster_size, 0.1)
+                figs, *_ = detect_anomalies_optics(
+                    pca_df, n=n_train, w=w_size,
+                    min_samples=min_s, xi=xi, min_cluster_size=min_clu
+                )
+
+            elif model_name == "kmeans_vector":
+                k = int_or(km_n_clusters, 3)
+                rs = int_or(km_random_state, 42)
+                models, *_ = train_kmeans(pca_df, n=n_train, w=w_size, n_clusters=k, random_state=rs)
+                figs, *_ = detect_anomalies_kmeans(pca_df, models, n=n_train, w=w_size)
 
             else:
                 return html.Div("Modello non supportato.", style={'color': 'red'})
