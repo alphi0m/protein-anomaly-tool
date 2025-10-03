@@ -314,7 +314,7 @@ layout = html.Div([
             # Nuovo: Local Outlier Factor
             html.Div([
                 html.H5("LOF"),
-                html.Label("N neighbors:"),
+                html.Label("Numero vicini:"),
                 dcc.Input(
                     id='lof-n-neighbors',
                     type='number',
