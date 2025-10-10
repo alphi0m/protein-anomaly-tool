@@ -1,5 +1,3 @@
-# python
-# file: 'app/callbacks.py'
 import base64
 import io
 import traceback
@@ -37,7 +35,304 @@ def apply_light_theme(fig, title=None):
 
 
 def register_callbacks(app):
-    # --- Dropdown dinamico modelli anomaly ---
+    # === CALLBACK 1: Analizza Dati Raw ===
+    @app.callback(
+        Output('raw-output', 'children'),
+        Output('stored-raw-data', 'data'),
+        Output('raw-section', 'style'),
+        Output('preprocessing-section', 'style'),
+        Input('analyze-raw-button', 'n_clicks'),
+        State('upload-files', 'contents'),
+        State('upload-files', 'filename')
+    )
+    def analyze_raw_data(n_clicks, contents_list, filenames):
+        if not n_clicks or n_clicks == 0:
+            return "", None, {'display': 'none'}, {'display': 'none'}
+
+        if not contents_list:
+            return html.Div("Nessun file caricato.", style={'color': 'red'}), None, \
+                {'display': 'none'}, {'display': 'none'}
+
+        try:
+            all_dfs = []
+            for contents, filename in zip(contents_list, filenames):
+                try:
+                    header, content_string = contents.split(',')
+                    decoded = base64.b64decode(content_string)
+                    df = pd.read_csv(
+                        io.StringIO(decoded.decode('utf-8', errors="ignore")),
+                        sep=r"\s+",
+                        skiprows=1,
+                        header=None,
+                        names=["Residuo", "Phi", "Psi"]
+                    )
+                    all_dfs.append(df)
+                except Exception as e:
+                    return html.Div(f"Errore nel file {filename}: {str(e)}", style={'color': 'red'}), None, \
+                        {'display': 'none'}, {'display': 'none'}
+
+            df_all = pd.concat(all_dfs, ignore_index=True)
+            df_all['Time'] = range(len(df_all))  # Aggiungi colonna Time
+
+            # Statistiche descrittive
+            df_num = df_all[["Phi", "Psi"]]
+            stats = pd.DataFrame({
+                "Media": df_num.mean(),
+                "Massimo": df_num.max(),
+                "Minimo": df_num.min(),
+                "Varianza": df_num.var(),
+                "Deviazione Std": df_num.std(),
+            })
+            stats.insert(0, "Componente", stats.index)
+
+            table = dash_table.DataTable(
+                data=stats.to_dict('records'),
+                columns=[{"name": i, "id": i} for i in stats.columns],
+                style_table={'overflowX': 'hidden'},
+                style_cell={'textAlign': 'center', 'padding': '8px'},
+                style_header={'backgroundColor': '#7a42ff', 'color': 'white'},
+                style_data={'color': '#222', 'backgroundColor': '#ffffff'},
+                page_action='none'
+            )
+
+            # Grafico temporale
+            fig_temporal = go.Figure()
+            fig_temporal.add_trace(go.Scatter(x=df_all['Time'], y=df_all['Phi'], mode='lines', name='Phi'))
+            fig_temporal.add_trace(go.Scatter(x=df_all['Time'], y=df_all['Psi'], mode='lines', name='Psi'))
+            fig_temporal = apply_light_theme(fig_temporal, "Andamento temporale Phi e Psi")
+
+            # Scatter 2D (Phi vs Psi)
+            fig_scatter = go.Figure()
+            fig_scatter.add_trace(go.Scatter(
+                x=df_all['Phi'],
+                y=df_all['Psi'],
+                mode='markers',
+                marker=dict(
+                    size=6,
+                    color=df_all['Time'],
+                    colorscale='Viridis',
+                    colorbar=dict(title='Time'),
+                    showscale=True
+                ),
+                text=df_all['Time'],
+                hovertemplate='Phi: %{x:.2f}<br>Psi: %{y:.2f}<br>Time: %{text}<extra></extra>'
+            ))
+            fig_scatter = apply_light_theme(fig_scatter, "Scatter Plot 2D (Phi vs Psi)")
+
+            return html.Div([
+                table,
+                dcc.Graph(figure=fig_temporal),
+                html.Hr(style={'margin': '30px 0'}),
+                dcc.Graph(figure=fig_scatter),
+            ]), df_all.to_json(date_format='iso', orient='split'), \
+                {'display': 'block'}, {'display': 'block'}
+
+        except Exception as e:
+            tb = traceback.format_exc()
+            return html.Div([
+                html.B("Errore nell'analisi raw:"),
+                html.Pre(str(e)),
+                html.Pre(tb)
+            ], style={'color': 'red'}), None, {'display': 'none'}, {'display': 'none'}
+
+    # === CALLBACK 2: Toggle campo num_components ===
+    @app.callback(
+        Output('num-components-container', 'style'),
+        Input('pca-toggle', 'value')
+    )
+    def toggle_num_components(pca_toggle):
+        if pca_toggle and 'pca' in pca_toggle:
+            return {'display': 'block'}
+        return {'display': 'none'}
+
+    # === CALLBACK 3: Applica Preprocessing (PCA) ===
+    @app.callback(
+        Output('pca-output', 'children'),
+        Output('stored-pca-data', 'data'),
+        Output('pca-section', 'style'),
+        Output('clustering-section', 'style'),
+        Output('anomaly-section', 'style'),
+        Input('apply-preprocessing-button', 'n_clicks'),
+        State('stored-raw-data', 'data'),
+        State('pca-toggle', 'value'),
+        State('num-components', 'value'),
+        State('preprocessing-options', 'value')
+    )
+    def apply_preprocessing(n_clicks, stored_raw_json, pca_toggle, num_components, preprocessing_options):
+        if not n_clicks or n_clicks == 0:
+            return "", None, {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
+
+        if not stored_raw_json:
+            return html.Div("Nessun dato raw disponibile. Esegui prima 'Analizza Dati Raw'.", style={'color': 'red'}), \
+                None, {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
+
+        pca_enabled = bool(pca_toggle and 'pca' in pca_toggle)
+
+        if not pca_enabled:
+            # Se PCA non è abilitata, usa i dati raw come fallback
+            df_raw = pd.read_json(io.StringIO(stored_raw_json), orient='split')
+            return html.Div("PCA non abilitata. Utilizza i dati raw per clustering/anomaly.",
+                          style={'color': 'orange'}), \
+                df_raw.to_json(date_format='iso', orient='split'), \
+                {'display': 'none'}, {'display': 'block'}, {'display': 'block'}
+
+        try:
+            num_components = int(num_components) if num_components else 3
+            if num_components < 1:
+                num_components = 3
+        except Exception:
+            num_components = 3
+
+        use_sin_cos = bool(preprocessing_options and 'sincos' in preprocessing_options)
+
+        try:
+            df_raw = pd.read_json(io.StringIO(stored_raw_json), orient='split')
+
+            n_frames = df_raw.shape[0]
+            if n_frames < 2:
+                return html.Div("Dataset troppo piccolo per PCA.", style={'color': 'red'}), None, \
+                    {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
+
+            window_size = min(30, n_frames)
+            overlap = False
+
+            pca_df = compute_windowed_pca(
+                df_raw[["Phi", "Psi"]],
+                window_size=window_size,
+                n_components=num_components,
+                use_sin_cos=use_sin_cos,
+                overlap=overlap
+            )
+
+            if pca_df.empty:
+                return html.Div("PCA non ha prodotto risultati.", style={'color': 'red'}), None, \
+                    {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
+
+            pc_cols = [c for c in pca_df.columns if c.startswith("PC")]
+
+            # Statistiche PC
+            stats = pd.DataFrame({
+                "Media": pca_df[pc_cols].mean(),
+                "Massimo": pca_df[pc_cols].max().round(4),
+                "Minimo": pca_df[pc_cols].min().round(4),
+                "Varianza": pca_df[pc_cols].var().round(4),
+                "Deviazione Std": pca_df[pc_cols].std().round(4),
+            })
+            stats.insert(0, "Componente", stats.index)
+
+            table = dash_table.DataTable(
+                data=stats.to_dict('records'),
+                columns=[{"name": i, "id": i} for i in stats.columns],
+                style_table={'overflowX': 'hidden'},
+                style_cell={'textAlign': 'center', 'padding': '8px'},
+                style_header={'backgroundColor': '#7a42ff', 'color': 'white'},
+                style_data={'color': '#222', 'backgroundColor': '#ffffff'},
+                page_action='none'
+            )
+
+            # Grafico temporale
+            fig_temporal = go.Figure()
+            for pc in pc_cols:
+                fig_temporal.add_trace(go.Scatter(x=pca_df['Time'], y=pca_df[pc], mode='lines', name=pc))
+            fig_temporal = apply_light_theme(fig_temporal, "Andamento temporale PC")
+
+            # Scatter 3D (PC1, PC2, PC3)
+            fig_scatter_3d = go.Figure()
+            if len(pc_cols) >= 3:
+                fig_scatter_3d.add_trace(go.Scatter3d(
+                    x=pca_df[pc_cols[0]],
+                    y=pca_df[pc_cols[1]],
+                    z=pca_df[pc_cols[2]],
+                    mode='markers',
+                    marker=dict(
+                        size=5,
+                        color=pca_df['Time'],
+                        colorscale='Viridis',
+                        colorbar=dict(title='Time'),
+                        showscale=True
+                    ),
+                    text=pca_df['Time'],
+                    hovertemplate=f'{pc_cols[0]}: %{{x:.2f}}<br>{pc_cols[1]}: %{{y:.2f}}<br>{pc_cols[2]}: %{{z:.2f}}<br>Time: %{{text}}<extra></extra>'
+                ))
+                fig_scatter_3d.update_layout(
+                    title="Scatter Plot 3D (PC1, PC2, PC3)",
+                    scene=dict(
+                        xaxis_title=pc_cols[0],
+                        yaxis_title=pc_cols[1],
+                        zaxis_title=pc_cols[2],
+                        xaxis=dict(gridcolor="#ddd", backgroundcolor="#fff"),
+                        yaxis=dict(gridcolor="#ddd", backgroundcolor="#fff"),
+                        zaxis=dict(gridcolor="#ddd", backgroundcolor="#fff")
+                    ),
+                    plot_bgcolor="#ffffff",
+                    paper_bgcolor="#ffffff",
+                    font=dict(color="#222")
+                )
+
+            # Parallel coordinates plot
+            dimensions = []
+            for col in pc_cols:
+                dimensions.append(dict(
+                    label=col,
+                    values=pca_df[col]
+                ))
+            dimensions.append(dict(
+                label='Time',
+                values=pca_df['Time']
+            ))
+
+            fig_parallel = go.Figure(data=go.Parcoords(
+                line=dict(
+                    color=pca_df['Time'],
+                    colorscale='Viridis',
+                    showscale=True,
+                    cmin=pca_df['Time'].min(),
+                    cmax=pca_df['Time'].max()
+                ),
+                dimensions=dimensions
+            ))
+            fig_parallel = apply_light_theme(fig_parallel, "Parallel Coordinates Plot")
+
+            return html.Div([
+                table,
+                dcc.Graph(figure=fig_temporal),
+                html.Hr(style={'margin': '30px 0'}),
+                dcc.Graph(figure=fig_scatter_3d) if len(pc_cols) >= 3 else html.Div(),
+                dcc.Graph(figure=fig_parallel),
+            ]), pca_df.to_json(date_format='iso', orient='split'), \
+                {'display': 'block'}, {'display': 'block'}, {'display': 'block'}
+
+        except Exception as e:
+            tb = traceback.format_exc()
+            return html.Div([
+                html.B("Errore nel preprocessing PCA:"),
+                html.Pre(str(e)),
+                html.Pre(tb)
+            ], style={'color': 'red'}), None, \
+                {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
+
+    # === CALLBACK 4: Lista file caricati ===
+    @app.callback(
+        Output('file-list', 'children'),
+        Input('upload-files', 'filename')
+    )
+    def update_file_list(filenames):
+        if filenames:
+            return [
+                html.Li(f"📄 {name}", style={
+                    'padding': '4px 10px',
+                    'backgroundColor': '#efe6ff',
+                    'borderRadius': '15px',
+                    'whiteSpace': 'nowrap',
+                    'boxShadow': '0 0 5px rgba(122, 66, 255, 0.35)',
+                    'marginRight': '8px',
+                    'color': '#333',
+                    'fontWeight': '600',
+                }) for name in filenames
+            ]
+        return html.Li("Nessun file caricato", style={'color': '#888', 'fontStyle': 'italic'})
+
+    # === CALLBACK 5: Dropdown dinamico modelli anomaly ===
     @app.callback(
         Output('anomaly-algorithm', 'options'),
         Output('anomaly-algorithm', 'value'),
@@ -59,22 +354,19 @@ def register_callbacks(app):
                 {'label': 'Matrix Profile (STUMP)', 'value': 'matrix_profile'},
             ]
         elif category == 'clustering':
-            # --- nuove opzioni clustering-based ---
             opts = [
                 {'label': 'DBSCAN (vector score)', 'value': 'dbscan_vector'},
                 {'label': 'OPTICS (reachability score)', 'value': 'optics_vector'},
-                {'label': 'K-Means (distance to centroid)', 'value': 'kmeans_vector'},
+                {'label': 'K-Means (distance score)', 'value': 'kmeans_vector'},
             ]
         else:
-            # fallback: mantieni sicurezza
-            opts = [
-                {'label': 'Linear Regression', 'value': 'linreg'}
-            ]
+            opts = [{'label': 'Linear Regression', 'value': 'linreg'}]
+
         values = {o['value'] for o in opts}
         new_value = current_value if current_value in values else opts[0]['value']
         return opts, new_value
 
-    # --- Toggle gruppi parametri anomaly ---
+    # === CALLBACK 6: Toggle gruppi parametri anomaly ===
     @app.callback(
         Output('params-bagging', 'style'),
         Output('params-rf', 'style'),
@@ -82,7 +374,6 @@ def register_callbacks(app):
         Output('params-et', 'style'),
         Output('params-lof', 'style'),
         Output('params-mp', 'style'),
-        # --- aggiunte: gruppi parametri clustering ---
         Output('params-dbscan-clustering', 'style'),
         Output('params-optics-clustering', 'style'),
         Output('params-kmeans-clustering', 'style'),
@@ -101,167 +392,11 @@ def register_callbacks(app):
             style(algorithm == 'et_bagging'),
             style(algorithm == 'lof'),
             style(algorithm == 'matrix_profile'),
-            # nuovi gruppi
             style(algorithm == 'dbscan_vector'),
             style(algorithm == 'optics_vector'),
             style(algorithm == 'kmeans_vector'),
         )
 
-    # --- Lista file caricati ---
-    @app.callback(
-        Output('file-list', 'children'),
-        Input('upload-files', 'filename')
-    )
-    def update_file_list(filenames):
-        if filenames:
-            return [
-                html.Li(f"📄 {name}", style={
-                    'padding': '4px 10px',
-                    'backgroundColor': '#efe6ff',
-                    'borderRadius': '15px',
-                    'whiteSpace': 'nowrap',
-                    'boxShadow': '0 0 5px rgba(122, 66, 255, 0.35)',
-                    'marginRight': '8px',
-                    'color': '#333',
-                    'fontWeight': '600',
-                }) for name in filenames
-            ]
-        return html.Li("Nessun file caricato", style={'color': '#888', 'fontStyle': 'italic'})
-
-    # --- Analisi (PCA o RAW) ---
-    @app.callback(
-        Output('analysis-output', 'children'),
-        Output('stored-pca-data', 'data'),
-        Output('pca-section', 'style'),
-        Output('clustering-section', 'style'),
-        Output('anomaly-section', 'style'),
-        Input('analyze-button', 'n_clicks'),
-        State('upload-files', 'contents'),
-        State('upload-files', 'filename'),
-        State('pca-toggle', 'value'),
-        State('num-components', 'value'),
-        State('preprocessing-options', 'value')
-    )
-    def analyze(n_clicks, contents_list, filenames, pca_toggle, num_components, preprocessing_options):
-        if not n_clicks or n_clicks == 0:
-            return "", None, {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
-
-        if not contents_list:
-            return html.Div("Nessun file caricato.", style={'color': 'red'}), None, \
-                {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
-
-        try:
-            num_components = int(num_components) if num_components else 3
-            if num_components < 1:
-                num_components = 3
-        except Exception:
-            num_components = 3
-
-        pca_enabled = bool(pca_toggle and 'pca' in pca_toggle)
-        use_sin_cos = bool(preprocessing_options and 'sincos' in preprocessing_options)
-
-        all_dfs = []
-        for contents, filename in zip(contents_list, filenames):
-            try:
-                header, content_string = contents.split(',')
-                decoded = base64.b64decode(content_string)
-                df = pd.read_csv(
-                    io.StringIO(decoded.decode('utf-8', errors="ignore")),
-                    sep=r"\s+",
-                    skiprows=1,
-                    header=None,
-                    names=["Residuo", "Phi", "Psi"]
-                )
-                all_dfs.append(df)
-            except Exception as e:
-                return html.Div(f"Errore nel file {filename}: {str(e)}", style={'color': 'red'}), None, \
-                    {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
-
-        df_all = pd.concat(all_dfs, ignore_index=True)
-
-        if pca_enabled:
-            try:
-                n_frames = df_all.shape[0]
-                if n_frames < 2:
-                    return html.Div("Dataset troppo piccolo per PCA.", style={'color': 'red'}), None, \
-                        {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
-
-                window_size = min(30, n_frames)
-                overlap = False
-
-                pca_df = compute_windowed_pca(
-                    df_all[["Phi", "Psi"]],
-                    window_size=window_size,
-                    n_components=num_components,
-                    use_sin_cos=use_sin_cos,
-                    overlap=overlap
-                )
-
-                if pca_df.empty:
-                    return html.Div("PCA non ha prodotto risultati.", style={'color': 'red'}), None, \
-                        {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
-
-                pc_cols = [c for c in pca_df.columns if c.startswith("PC")]
-
-                stats = pd.DataFrame({
-                    "Media": pca_df[pc_cols].mean(),
-                    "Massimo": pca_df[pc_cols].max().round(4),
-                    "Minimo": pca_df[pc_cols].min().round(4),
-                    "Varianza": pca_df[pc_cols].var().round(4),
-                    "Deviazione Std": pca_df[pc_cols].std().round(4),
-                })
-                stats.insert(0, "Componente", stats.index)
-
-                table = dash_table.DataTable(
-                    data=stats.to_dict('records'),
-                    columns=[{"name": i, "id": i} for i in stats.columns],
-                    style_table={'overflowX': 'hidden'},
-                    style_cell={'textAlign': 'center', 'padding': '8px'},
-                    style_header={'backgroundColor': '#7a42ff', 'color': 'white'},
-                    style_data={'color': '#222', 'backgroundColor': '#ffffff'},
-                    page_action='none'
-                )
-
-                fig_temporal = go.Figure()
-                for pc in pc_cols:
-                    fig_temporal.add_trace(go.Scatter(x=pca_df['Time'], y=pca_df[pc], mode='lines', name=pc))
-                fig_temporal = apply_light_theme(fig_temporal, "Andamento temporale PC")
-
-                return html.Div([
-                    table,
-                    dcc.Graph(figure=fig_temporal),
-                ]), pca_df.to_json(date_format='iso', orient='split'), \
-                    {'display': 'block'}, {'display': 'block'}, {'display': 'block'}
-
-            except Exception as e:
-                tb = traceback.format_exc()
-                return html.Div([html.B("Errore PCA:"), html.Pre(str(e)), html.Pre(tb)]), None, \
-                    {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
-        else:
-            df_num = df_all[["Phi", "Psi"]]
-            stats = pd.DataFrame({
-                "Media": df_num.mean(),
-                "Massimo": df_num.max(),
-                "Minimo": df_num.min(),
-                "Varianza": df_num.var(),
-                "Deviazione Std": df_num.std(),
-            })
-            stats.insert(0, "Componente", stats.index)
-
-            table = dash_table.DataTable(
-                data=stats.to_dict('records'),
-                columns=[{"name": i, "id": i} for i in stats.columns],
-                style_cell={'textAlign': 'center', 'padding': '8px'},
-                style_header={'backgroundColor': '#7a42ff', 'color': 'white'},
-                style_data={'color': '#222', 'backgroundColor': '#ffffff'}
-            )
-
-            fig_line = px.line(df_all.iloc[::10, :], x=df_all.index[::10], y=["Phi", "Psi"],
-                               title="Andamento Phi e Psi (campionato)")
-            fig_line = apply_light_theme(fig_line)
-
-            return html.Div([table, dcc.Graph(figure=fig_line)]), None, \
-                {'display': 'block'}, {'display': 'block'}, {'display': 'block'}
 
     # --- Clustering ---
     @app.callback(

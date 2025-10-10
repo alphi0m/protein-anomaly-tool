@@ -38,21 +38,50 @@ layout = html.Div([
                 'userSelect': 'none',
             }
         ),
+        html.Button(
+            "Analizza Dati Raw",
+            id='analyze-raw-button',
+            n_clicks=0,
+            className="analyze-button",
+            style={'marginTop': '10px'}
+        ),
+        dcc.Store(id='stored-raw-data')  # Nuovo store per dati raw
+    ], className='box'),
+
+    # === BOX 2: Risultati Dati Raw (sempre visibile dopo analisi) ===
+    html.Div([
+        html.H3("📊 Dati Raw (Phi, Psi)", style={'color': '#7a42ff'}),
+        html.Hr(style={'borderColor': '#ddd'}),
+        dcc.Loading(
+            id="loading-raw",
+            type="circle",
+            children=html.Div(id='raw-output', className='analysis-panel')
+        )
+    ], id="raw-section", className="box", style={'display': 'none'}),
+
+    # === BOX 3: Preprocessing Opzionale ===
+    html.Div([
+        html.H3("🔧 Preprocessing Opzionale", style={'color': '#7a42ff'}),
+        html.Hr(style={'borderColor': '#ddd'}),
+
         html.Div([
+            html.Label("Opzioni preprocessing:", style={'fontWeight': 'bold', 'marginBottom': '8px'}),
             dcc.Checklist(
                 id='preprocessing-options',
-                options=[{'label': 'Applica Sin/Cos', 'value': 'sincos'}],
+                options=[{'label': ' Applica Sin/Cos', 'value': 'sincos'}],
                 value=[],
-                labelStyle={'display': 'inline-block', 'marginRight': '20px'}
+                labelStyle={'display': 'block', 'marginBottom': '8px'}
             ),
+
             dcc.Checklist(
                 id='pca-toggle',
-                options=[{'label': 'Abilita PCA', 'value': 'pca'}],
+                options=[{'label': ' Abilita PCA', 'value': 'pca'}],
                 value=[],
-                labelStyle={'display': 'inline-block', 'marginRight': '20px'}
+                labelStyle={'display': 'block', 'marginBottom': '8px'}
             ),
+
             html.Div([
-                html.Label("Numero di componenti principali:"),
+                html.Label("Numero di componenti principali:", style={'marginTop': '10px'}),
                 dcc.Input(
                     id='num-components',
                     type='number',
@@ -61,33 +90,35 @@ layout = html.Div([
                     step=1,
                     value=3,
                     placeholder='es. 3',
-                    style={'width': '120px'}
+                    style={'width': '120px', 'marginTop': '5px'}
                 )
-            ], id='num-components-container', style={'display': 'none', 'marginTop': '5px'}),
-        ], style={'marginTop': '10px'}),
+            ], id='num-components-container', style={'display': 'none'}),
+        ], style={'marginBottom': '15px'}),
+
         html.Button(
-            "Analizza",
-            id='analyze-button',
+            "Applica Preprocessing",
+            id='apply-preprocessing-button',
             n_clicks=0,
             className="analyze-button",
             style={'marginTop': '10px'}
         ),
-        dcc.Store(id='stored-pca-data')
-    ], className='box'),
+        dcc.Store(id='stored-pca-data')  # Store per dati con PCA
+    ], id="preprocessing-section", className="box", style={'display': 'none'}),
 
-    # === BOX 2: Risultati (PCA / Statistiche) ===
+    # === BOX 4: Risultati PCA (appare solo se PCA attivata) ===
     html.Div([
-        html.H3("Risultati"),
+        html.H3("📈 Risultati PCA", style={'color': '#7a42ff'}),
+        html.Hr(style={'borderColor': '#ddd'}),
         dcc.Loading(
             id="loading-pca",
             type="circle",
-            children=html.Div(id='analysis-output', className='analysis-panel')
+            children=html.Div(id='pca-output', className='analysis-panel')
         )
     ], id="pca-section", className="box", style={'display': 'none'}),
 
-    # === BOX 3: Clustering ===
+    # === BOX 5: Clustering ===
     html.Div([
-        html.H4("Clustering", className="panel-title"),
+        html.H4("🎯 Clustering", className="panel-title"),
         html.Label("Seleziona algoritmo di clustering:"),
         dcc.Dropdown(
             id='clustering-algorithm',
@@ -114,11 +145,10 @@ layout = html.Div([
         )
     ], id="clustering-section", className="box", style={'display': 'none'}),
 
-    # === BOX 4: Anomaly Detection ===
+    # === BOX 6: Anomaly Detection ===
     html.Div([
-        html.H4("Anomaly Detection", className="panel-title"),
+        html.H4("⚠️ Anomaly Detection", className="panel-title"),
 
-        # Nuovo: selezione categoria
         html.Label("Categoria modello:"),
         dcc.Dropdown(
             id='anomaly-category',
@@ -185,7 +215,7 @@ layout = html.Div([
                 ),
             ], id='params-common', className='param-group', style={'marginBottom': '15px'}),
 
-            # Gruppo parametri bagging (esistente)
+            # Gruppo parametri bagging
             html.Div([
                 html.H5("Bagging"),
                 html.Label("Numero modelli:"),
@@ -311,7 +341,7 @@ layout = html.Div([
                 ),
             ], id='params-et', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
 
-            # Nuovo: Local Outlier Factor
+            # LOF
             html.Div([
                 html.H5("LOF"),
                 html.Label("Numero vicini:"),
@@ -338,15 +368,14 @@ layout = html.Div([
                 ),
             ], id='params-lof', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
 
+            # Matrix Profile
             html.Div([
                 html.H5("Matrix Profile"),
-                html.P("Nessun parametro aggiuntivo richiesto.", style={'margin': 0, 'fontSize': '13px', 'color': '#555'})
+                html.P("Nessun parametro aggiuntivo richiesto.",
+                       style={'margin': 0, 'fontSize': '13px', 'color': '#555'})
             ], id='params-mp', className='param-group', style={'display': 'none', 'marginBottom': '15px'}),
 
-            # python
-            # --- da inserire nella sezione "PARAMETRI DINAMICI MODELLI" dopo il gruppo LOF ---
-
-            # DBSCAN (clustering)
+            # DBSCAN
             html.Div([
                 html.H5("DBSCAN"),
                 html.Label("eps:"),
@@ -383,7 +412,7 @@ layout = html.Div([
             ], id='params-dbscan-clustering', className='param-group',
                 style={'display': 'none', 'marginBottom': '15px'}),
 
-            # OPTICS (clustering)
+            # OPTICS
             html.Div([
                 html.H5("OPTICS"),
                 html.Label("Numero min samples:"),
@@ -419,7 +448,7 @@ layout = html.Div([
             ], id='params-optics-clustering', className='param-group',
                 style={'display': 'none', 'marginBottom': '15px'}),
 
-            # K-Means (clustering)
+            # K-Means
             html.Div([
                 html.H5("K-Means"),
                 html.Label("Numero clusters:"),

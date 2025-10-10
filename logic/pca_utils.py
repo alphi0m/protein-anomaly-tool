@@ -28,7 +28,7 @@ def compute_windowed_pca(df_angles, window_size, n_components=3, use_sin_cos=Tru
     """
     N = df_angles.shape[0]
     if N == 0 or window_size <= 0 or window_size > N:
-        return pd.DataFrame()  # niente da fare
+        return pd.DataFrame()
 
     step = 1 if overlap else window_size
     pca_results = []
@@ -42,7 +42,9 @@ def compute_windowed_pca(df_angles, window_size, n_components=3, use_sin_cos=Tru
             window_trans = window.copy()
 
         n_samples, n_features = window_trans.shape
-        k = min(n_components, n_samples, n_features)
+        k_max = min(n_samples, n_features)
+        k = min(n_components, k_max)
+
         if k < 1:
             continue
 
