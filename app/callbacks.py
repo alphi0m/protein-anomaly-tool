@@ -7,7 +7,7 @@ from dash import Input, Output, State, html, dash_table, dcc, no_update
 import plotly.express as px
 import plotly.graph_objs as go
 
-from logic.pca_utils import compute_windowed_pca
+from logic.pca_utils import compute_windowed_pca, convert_to_wide_format
 from logic.clustering_utils import dbscan_clustering, optics_clustering, spectral_clustering
 from logic.anomaly_detection import (
     train_linear_regression, detect_anomalies_linear,
@@ -21,20 +21,36 @@ from logic.anomaly_detection import (
     train_kmeans, detect_anomalies_kmeans
 )
 
-def apply_light_theme(fig, title=None):
-    fig.update_layout(
-        title=title,
-        plot_bgcolor="#ffffff",
-        paper_bgcolor="#ffffff",
-        font=dict(color="#222"),
-        xaxis=dict(color="#222", gridcolor="#ddd"),
-        yaxis=dict(color="#222", gridcolor="#ddd"),
-        legend=dict(font=dict(color="#222"))
-    )
+
+def apply_light_theme(fig, title=None, reverse_y=False):
+    """
+    Applica tema chiaro al grafico.
+
+    Args:
+        fig: Figura Plotly
+        title: Titolo del grafico
+        reverse_y: Se True, inverte l'asse Y
+    """
+    layout_updates = {
+        'title': title,
+        'plot_bgcolor': "#ffffff",
+        'paper_bgcolor': "#ffffff",
+        'font': dict(color="#222"),
+        'xaxis': dict(color="#222", gridcolor="#ddd"),
+        'yaxis': dict(color="#222", gridcolor="#ddd"),
+        'legend': dict(font=dict(color="#222"))
+    }
+
+    # Aggiungi inversione asse Y se richiesto
+    if reverse_y:
+        layout_updates['yaxis']['autorange'] = 'reversed'
+
+    fig.update_layout(**layout_updates)
     return fig
 
 
 def register_callbacks(app):
+
     # === CALLBACK 1: Analizza Dati Raw ===
     @app.callback(
         Output('raw-output', 'children'),
@@ -54,78 +70,131 @@ def register_callbacks(app):
                 {'display': 'none'}, {'display': 'none'}
 
         try:
-            all_dfs = []
-            for contents, filename in zip(contents_list, filenames):
+            # 1️⃣ LOGICA DEL PROF: costruisci long format diretto
+            data_list = []
+
+            for i, (contents, filename) in enumerate(sorted(zip(contents_list, filenames), key=lambda x: x[1])):
                 try:
                     header, content_string = contents.split(',')
                     decoded = base64.b64decode(content_string)
-                    df = pd.read_csv(
+                    data = pd.read_csv(
                         io.StringIO(decoded.decode('utf-8', errors="ignore")),
                         sep=r"\s+",
                         skiprows=1,
                         header=None,
-                        names=["Residuo", "Phi", "Psi"]
+                        names=["residuo", "Phi", "Psi"]
                     )
-                    all_dfs.append(df)
+
+                    time_label = f'time_{i}'
+
+                    # Aggiungi Phi
+                    for _, row in data.iterrows():
+                        data_list.append([row['residuo'], 'Phi', time_label, row['Phi']])
+
+                    # Aggiungi Psi
+                    for _, row in data.iterrows():
+                        data_list.append([row['residuo'], 'Psi', time_label, row['Psi']])
+
                 except Exception as e:
                     return html.Div(f"Errore nel file {filename}: {str(e)}", style={'color': 'red'}), None, \
                         {'display': 'none'}, {'display': 'none'}
 
-            df_all = pd.concat(all_dfs, ignore_index=True)
-            df_all['Time'] = range(len(df_all))  # Aggiungi colonna Time
+            # 2️⃣ Creazione DataFrame long
+            combined_df = pd.DataFrame(data_list, columns=['residuo', 'angolo', 'tempo', 'valore'])
 
-            # Statistiche descrittive
-            df_num = df_all[["Phi", "Psi"]]
-            stats = pd.DataFrame({
-                "Media": df_num.mean(),
-                "Massimo": df_num.max(),
-                "Minimo": df_num.min(),
-                "Varianza": df_num.var(),
-                "Deviazione Std": df_num.std(),
-            })
-            stats.insert(0, "Componente", stats.index)
+            # 3️⃣ Pivot → wide format
+            pivot_df = combined_df.pivot_table(
+                index=['residuo', 'angolo'],
+                columns='tempo',
+                values='valore'
+            ).reset_index()
 
-            table = dash_table.DataTable(
-                data=stats.to_dict('records'),
-                columns=[{"name": i, "id": i} for i in stats.columns],
-                style_table={'overflowX': 'hidden'},
-                style_cell={'textAlign': 'center', 'padding': '8px'},
-                style_header={'backgroundColor': '#7a42ff', 'color': 'white'},
-                style_data={'color': '#222', 'backgroundColor': '#ffffff'},
-                page_action='none'
+            # 4️⃣ Ordina colonne temporali
+            time_columns = sorted(
+                [c for c in pivot_df.columns if c.startswith('time_')],
+                key=lambda x: int(x.split('_')[1])
+            )
+            reordered_df = pivot_df[['residuo', 'angolo'] + time_columns]
+
+            # 5️⃣ Salva CSV (formato WIDE come il prof)
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_csv = f'combined_series_sorted_{timestamp}.csv'
+            reordered_df.to_csv(output_csv, index=False)
+            print(f"✅ CSV salvato: {output_csv}")
+
+            # 6️⃣ Statistiche e plot (usa combined_df long format)
+            # 🔧 CALCOLA STATISTICHE PER TEMPO (non per angolo!)
+            time_columns = sorted(
+                [c for c in combined_df['tempo'].unique()],
+                key=lambda x: int(x.split('_')[1])
             )
 
-            # Grafico temporale
-            fig_temporal = go.Figure()
-            fig_temporal.add_trace(go.Scatter(x=df_all['Time'], y=df_all['Phi'], mode='lines', name='Phi'))
-            fig_temporal.add_trace(go.Scatter(x=df_all['Time'], y=df_all['Psi'], mode='lines', name='Psi'))
-            fig_temporal = apply_light_theme(fig_temporal, "Andamento temporale Phi e Psi")
+            # Separa Phi e Psi
+            phi_data = combined_df[combined_df['angolo'] == 'Phi']['valore'].values
+            psi_data = combined_df[combined_df['angolo'] == 'Psi']['valore'].values
 
-            # Scatter 2D (Phi vs Psi)
-            fig_scatter = go.Figure()
-            fig_scatter.add_trace(go.Scatter(
-                x=df_all['Phi'],
-                y=df_all['Psi'],
-                mode='markers',
-                marker=dict(
-                    size=6,
-                    color=df_all['Time'],
-                    colorscale='Viridis',
-                    colorbar=dict(title='Time'),
-                    showscale=True
-                ),
-                text=df_all['Time'],
-                hovertemplate='Phi: %{x:.2f}<br>Psi: %{y:.2f}<br>Time: %{text}<extra></extra>'
-            ))
-            fig_scatter = apply_light_theme(fig_scatter, "Scatter Plot 2D (Phi vs Psi)")
+            # Crea DataFrame per statistiche
+            df_stats = pd.DataFrame({
+                'Componente': ['Phi', 'Psi'],
+                'mean': [phi_data.mean(), psi_data.mean()],
+                'max': [phi_data.max(), psi_data.max()],
+                'min': [phi_data.min(), psi_data.min()],
+                'var': [phi_data.var(), psi_data.var()],
+                'std': [phi_data.std(), psi_data.std()]
+            })
+
+            table = dash_table.DataTable(
+                data=df_stats.to_dict('records'),
+                columns=[{"name": i, "id": i} for i in df_stats.columns],
+                style_table={'overflowX': 'auto'},
+                style_cell={'textAlign': 'center', 'padding': '8px'},  # ✅ Centra i dati
+                style_header={'fontWeight': 'bold', 'backgroundColor': '#7a42ff', 'color': 'white'},
+                style_data={'backgroundColor': '#ffffff', 'color': '#222'},
+            )
+
+            # 7️⃣ Plot temporale (usa tempo numerico estratto da time_label)
+            combined_df['Time'] = combined_df['tempo'].str.split('_').str[1].astype(int)
+
+            fig_temporal = go.Figure()
+            for angolo in ['Phi', 'Psi']:
+                df_angolo = combined_df[combined_df['angolo'] == angolo]
+                fig_temporal.add_trace(go.Scatter(
+                    x=df_angolo['Time'],
+                    y=df_angolo['valore'],
+                    mode='lines',
+                    name=angolo
+                ))
+            fig_temporal = apply_light_theme(fig_temporal, "Andamento temporale angoli")
+
+            # 8️⃣ Scatter 2D (Phi vs Psi per ogni tempo)
+            phi_df = combined_df[combined_df['angolo'] == 'Phi'][['residuo', 'tempo', 'valore', 'Time']].rename(
+                columns={'valore': 'Phi'})
+            psi_df = combined_df[combined_df['angolo'] == 'Psi'][['residuo', 'tempo', 'valore']].rename(
+                columns={'valore': 'Psi'})
+            scatter_df = phi_df.merge(psi_df, on=['residuo', 'tempo'])
+
+            fig_scatter = px.scatter(
+                scatter_df,
+                x="Phi",
+                y="Psi",
+                color="Time",
+                labels={"Phi": "Phi (°)", "Psi": "Psi (°)"},
+                title="Scatter 2D: Phi vs Psi"
+            )
+            fig_scatter = apply_light_theme(fig_scatter)
+
+            # 9️⃣ Salva wide format nello store (per PCA)
+            stored_data = reordered_df.to_json(date_format='iso', orient='split')
 
             return html.Div([
+                html.H3("📊 Statistiche Dati Raw"),
                 table,
+                html.Hr(),
                 dcc.Graph(figure=fig_temporal),
-                html.Hr(style={'margin': '30px 0'}),
-                dcc.Graph(figure=fig_scatter),
-            ]), df_all.to_json(date_format='iso', orient='split'), \
-                {'display': 'block'}, {'display': 'block'}
+                html.Hr(),
+                dcc.Graph(figure=fig_scatter)
+            ]), stored_data, {'display': 'block'}, {'display': 'block'}
 
         except Exception as e:
             tb = traceback.format_exc()
@@ -144,6 +213,7 @@ def register_callbacks(app):
         if pca_toggle and 'pca' in pca_toggle:
             return {'display': 'block'}
         return {'display': 'none'}
+
 
     # === CALLBACK 3: Applica Preprocessing (PCA) ===
     @app.callback(
@@ -172,7 +242,7 @@ def register_callbacks(app):
             # Se PCA non è abilitata, usa i dati raw come fallback
             df_raw = pd.read_json(io.StringIO(stored_raw_json), orient='split')
             return html.Div("PCA non abilitata. Utilizza i dati raw per clustering/anomaly.",
-                          style={'color': 'orange'}), \
+                            style={'color': 'orange'}), \
                 df_raw.to_json(date_format='iso', orient='split'), \
                 {'display': 'none'}, {'display': 'block'}, {'display': 'block'}
 
@@ -186,29 +256,38 @@ def register_callbacks(app):
         use_sin_cos = bool(preprocessing_options and 'sincos' in preprocessing_options)
 
         try:
-            df_raw = pd.read_json(io.StringIO(stored_raw_json), orient='split')
+            # Carica wide format dal store
+            df_wide = pd.read_json(io.StringIO(stored_raw_json), orient='split')
 
-            n_frames = df_raw.shape[0]
-            if n_frames < 2:
-                return html.Div("Dataset troppo piccolo per PCA.", style={'color': 'red'}), None, \
-                    {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
+            # Rimuovi metadata
+            df_pca = df_wide.drop(['residuo', 'angolo'], axis=1)
 
-            window_size = min(30, n_frames)
-            overlap = False
+            # Trasponi: (residui, tempi) → (tempi, residui)
+            window_data = df_pca.T  # Ora le righe sono i tempi, le colonne sono i residui
 
-            pca_df = compute_windowed_pca(
-                df_raw[["Phi", "Psi"]],
-                window_size=window_size,
-                n_components=num_components,
-                use_sin_cos=use_sin_cos,
-                overlap=overlap
-            )
+            # Sin/Cos (opzionale)
+            if use_sin_cos:
+                from logic.pca_utils import add_sin_cos_columns
+                window_trans = add_sin_cos_columns(window_data)
+            else:
+                window_trans = window_data
+
+            # PCA globale (tutti i tempi insieme)
+            from sklearn.decomposition import PCA
+            pca = PCA(n_components=num_components)
+            pca_result = pca.fit_transform(window_trans)  # Shape: (n_tempi, n_components)
+
+            # Crea DataFrame risultati
+            pc_cols = [f'PC{i + 1}' for i in range(num_components)]
+            pca_df = pd.DataFrame(pca_result, columns=pc_cols)
+
+            # Estrai Time dai nomi colonne (time_0 → 0, time_1 → 1, ...)
+            time_values = [int(col.split('_')[1]) for col in df_pca.columns]
+            pca_df['Time'] = time_values  # ✅ Usa tempo reale (0-240)
 
             if pca_df.empty:
                 return html.Div("PCA non ha prodotto risultati.", style={'color': 'red'}), None, \
                     {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
-
-            pc_cols = [c for c in pca_df.columns if c.startswith("PC")]
 
             # Statistiche PC
             stats = pd.DataFrame({
@@ -234,7 +313,9 @@ def register_callbacks(app):
             fig_temporal = go.Figure()
             for pc in pc_cols:
                 fig_temporal.add_trace(go.Scatter(x=pca_df['Time'], y=pca_df[pc], mode='lines', name=pc))
-            fig_temporal = apply_light_theme(fig_temporal, "Andamento temporale PC")
+
+            # 🔧 Applica tema con asse Y invertito
+            fig_temporal = apply_light_theme(fig_temporal, "Andamento temporale PC", reverse_y=True)
 
             # Scatter 3D (PC1, PC2, PC3)
             fig_scatter_3d = go.Figure()
