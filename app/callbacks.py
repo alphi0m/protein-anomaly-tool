@@ -1,7 +1,6 @@
 import base64
 import io
 import traceback
-import numpy as np
 import pandas as pd
 from dash import Input, Output, State, html, dash_table, dcc, no_update
 import plotly.express as px
@@ -214,6 +213,221 @@ def register_callbacks(app):
             return {'display': 'block'}
         return {'display': 'none'}
 
+    # === CALLBACK NUOVO 1: Toggle visibilità box Raw/CSV ===
+    @app.callback(
+        Output('upload-raw-container', 'style'),
+        Output('upload-csv-container', 'style'),
+        Input('upload-mode', 'value')
+    )
+    def toggle_upload_boxes(mode):
+        """
+        Mostra/nasconde box Raw o CSV in base alla modalità selezionata.
+
+        Args:
+            mode: 'raw' o 'preprocessed'
+
+        Returns:
+            Tuple[dict, dict]: Stili per container Raw e CSV
+        """
+        if mode == 'raw':
+            return (
+                {'display': 'block'},  # Mostra box viola
+                {'display': 'none'}  # Nascondi box verde
+            )
+        else:  # mode == 'preprocessed'
+            return (
+                {'display': 'none'},  # Nascondi box viola
+                {'display': 'block'}  # Mostra box verde
+            )
+
+    # === CALLBACK NUOVO 2: Aggiorna nome file CSV ===
+    @app.callback(
+        Output('csv-file-name', 'children'),
+        Input('upload-csv', 'contents'),
+        State('upload-csv', 'filename')
+    )
+    def update_csv_filename(contents, filename):
+        """
+        Mostra il nome del file CSV caricato.
+
+        Args:
+            contents: Contenuto file base64
+            filename: Nome file
+
+        Returns:
+            html.Div: Preview nome file con statistiche base
+        """
+        if not contents or not filename:
+            return html.Div("Nessun file caricato", style={'color': '#9ca3af'})
+
+        try:
+            # Decodifica per ottenere statistiche base
+            _, content_string = contents.split(',')
+            decoded = base64.b64decode(content_string)
+            df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
+
+            return html.Div([
+                html.Div([
+                    html.Span("✅ ", style={'fontSize': '16px'}),
+                    html.Span(filename, style={'fontWeight': 'bold', 'color': '#047857'})
+                ], style={'marginBottom': '8px'}),
+                html.Div([
+                    html.Span(f"📊 {len(df)} righe × {len(df.columns)} colonne",
+                              style={'fontSize': '12px', 'color': '#6b7280'}),
+                ])
+            ])
+        except Exception as e:
+            return html.Div(f"⚠️ Errore lettura: {str(e)}", style={'color': '#dc2626', 'fontSize': '12px'})
+
+    # === CALLBACK 3 : gestione del csv direttamente ===
+    @app.callback(
+        Output('raw-output', 'children', allow_duplicate=True),
+        Output('stored-raw-data', 'data', allow_duplicate=True),
+        Output('raw-section', 'style', allow_duplicate=True),
+        Output('preprocessing-section', 'style', allow_duplicate=True),
+        Input('analyze-csv-button', 'n_clicks'),
+        State('upload-csv', 'contents'),
+        State('upload-csv', 'filename'),
+        prevent_initial_call=True
+    )
+    def load_preprocessed_csv(n_clicks, contents, filename):
+        """
+        Carica CSV preprocessato (formato WIDE) e replica il flusso Raw
+        dal punto 5️⃣ (CSV già salvato) in poi.
+        """
+
+        # Validazioni
+        if not n_clicks or n_clicks == 0:
+            return no_update, no_update, no_update, no_update
+
+        if not contents:
+            return (
+                html.Div("❌ Nessun file CSV caricato", style={'color': '#dc2626'}),
+                None, {'display': 'none'}, {'display': 'none'}
+            )
+
+        try:
+            # 1️⃣ Decodifica CSV (formato WIDE - identico a reordered_df del Raw)
+            _, content_string = contents.split(',')
+            decoded = base64.b64decode(content_string)
+            reordered_df = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
+
+            print(f"✅ CSV caricato (wide): {reordered_df.shape}")
+
+            # 2️⃣ Validazione colonne
+            if 'residuo' not in reordered_df.columns or 'angolo' not in reordered_df.columns:
+                return (
+                    html.Div("❌ CSV non valido: mancano colonne 'residuo' e/o 'angolo'",
+                             style={'color': '#dc2626'}),
+                    None, {'display': 'none'}, {'display': 'none'}
+                )
+
+            time_columns = [c for c in reordered_df.columns if c.startswith('time_')]
+            if not time_columns:
+                return (
+                    html.Div("❌ CSV non valido: mancano colonne time_*",
+                             style={'color': '#dc2626'}),
+                    None, {'display': 'none'}, {'display': 'none'}
+                )
+
+            # 3️⃣ RICOSTRUISCI LONG FORMAT (come nel callback Raw punto 2️⃣)
+            combined_df = reordered_df.melt(
+                id_vars=['residuo', 'angolo'],
+                value_vars=time_columns,
+                var_name='tempo',
+                value_name='valore'
+            )
+
+            print(f"✅ Long format ricostruito: {combined_df.shape}")
+
+            # 4️⃣ STATISTICHE (identico al callback Raw punto 6️⃣)
+            phi_data = combined_df[combined_df['angolo'] == 'Phi']['valore'].values
+            psi_data = combined_df[combined_df['angolo'] == 'Psi']['valore'].values
+
+            df_stats = pd.DataFrame({
+                'Componente': ['Phi', 'Psi'],
+                'mean': [phi_data.mean(), psi_data.mean()],
+                'max': [phi_data.max(), psi_data.max()],
+                'min': [phi_data.min(), psi_data.min()],
+                'var': [phi_data.var(), psi_data.var()],
+                'std': [phi_data.std(), psi_data.std()]
+            })
+
+            table = dash_table.DataTable(
+                data=df_stats.to_dict('records'),
+                columns=[{"name": i, "id": i} for i in df_stats.columns],
+                style_table={'overflowX': 'auto'},
+                style_cell={'textAlign': 'center', 'padding': '8px'},
+                style_header={'fontWeight': 'bold', 'backgroundColor': '#7a42ff', 'color': 'white'},
+                style_data={'backgroundColor': '#ffffff', 'color': '#222'}
+            )
+
+            # 5️⃣ PLOT TEMPORALE (identico al callback Raw punto 7️⃣)
+            combined_df['Time'] = combined_df['tempo'].str.split('_').str[1].astype(int)
+
+            fig_temporal = go.Figure()
+            for angolo in ['Phi', 'Psi']:
+                df_angolo = combined_df[combined_df['angolo'] == angolo]
+                fig_temporal.add_trace(go.Scatter(
+                    x=df_angolo['Time'],
+                    y=df_angolo['valore'],
+                    mode='lines',
+                    name=angolo
+                ))
+            fig_temporal = apply_light_theme(fig_temporal, "Andamento temporale angoli")
+
+            # 6️⃣ SCATTER 2D (identico al callback Raw punto 8️⃣)
+            phi_df = combined_df[combined_df['angolo'] == 'Phi'][['residuo', 'tempo', 'valore', 'Time']].rename(
+                columns={'valore': 'Phi'})
+            psi_df = combined_df[combined_df['angolo'] == 'Psi'][['residuo', 'tempo', 'valore']].rename(
+                columns={'valore': 'Psi'})
+            scatter_df = phi_df.merge(psi_df, on=['residuo', 'tempo'])
+
+            fig_scatter = px.scatter(
+                scatter_df,
+                x="Phi",
+                y="Psi",
+                color="Time",
+                labels={"Phi": "Phi (°)", "Psi": "Psi (°)"},
+                title="Scatter 2D: Phi vs Psi"
+            )
+            fig_scatter = apply_light_theme(fig_scatter)
+
+            # 7️⃣ SALVA WIDE FORMAT NELLO STORE (identico al callback Raw punto 9️⃣)
+            stored_data = reordered_df.to_json(date_format='iso', orient='split')
+
+            # 8️⃣ OUTPUT (identico al callback Raw)
+            output = html.Div([
+                html.H3("📊 Statistiche Dati Raw"),
+                table,
+                html.Hr(),
+                dcc.Graph(figure=fig_temporal),
+                html.Hr(),
+                dcc.Graph(figure=fig_scatter)
+            ])
+
+            print("✅ Callback CSV completato (identico al Raw)!\n")
+
+            return output, stored_data, {'display': 'block'}, {'display': 'block'}
+
+        except Exception as e:
+            tb = traceback.format_exc()
+            print(f"❌ ERRORE nel callback CSV:")
+            print(tb)
+            return (
+                html.Div([
+                    html.B("❌ Errore caricamento CSV", style={'color': '#dc2626', 'fontSize': '16px'}),
+                    html.Hr(style={'margin': '10px 0'}),
+                    html.Pre(str(e), style={
+                        'background': '#fee2e2',
+                        'padding': '10px',
+                        'borderRadius': '6px',
+                        'fontSize': '13px',
+                        'color': '#991b1b'
+                    })
+                ]),
+                None, {'display': 'none'}, {'display': 'none'}
+            )
 
     # === CALLBACK 3: Applica Preprocessing (PCA) ===
     @app.callback(
@@ -355,11 +569,14 @@ def register_callbacks(app):
             for col in pc_cols:
                 dimensions.append(dict(
                     label=col,
-                    values=pca_df[col]
+                    values=pca_df[col],
+                    range=[pca_df[col].min(), pca_df[col].max()]  # ✅ Range nativo
                 ))
+
             dimensions.append(dict(
                 label='Time',
-                values=pca_df['Time']
+                values=pca_df['Time'],
+                range=[pca_df['Time'].min(), pca_df['Time'].max()]
             ))
 
             fig_parallel = go.Figure(data=go.Parcoords(
@@ -368,9 +585,12 @@ def register_callbacks(app):
                     colorscale='Viridis',
                     showscale=True,
                     cmin=pca_df['Time'].min(),
-                    cmax=pca_df['Time'].max()
+                    cmax=pca_df['Time'].max(),
+                    colorbar=dict(title='Time (ns)')
                 ),
-                dimensions=dimensions
+                dimensions=dimensions,
+                labelfont=dict(size=12, color='#222'),
+                rangefont=dict(size=10, color='#666')
             ))
             fig_parallel = apply_light_theme(fig_parallel, "Parallel Coordinates Plot")
 

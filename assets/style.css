@@ -245,3 +245,213 @@ h3, .panel-title {
         padding: 18px 16px;
     }
 }
+
+/* ========================================
+   UPLOAD SIDE-BY-SIDE (Viola + Verde)
+   ======================================== */
+
+/* Radio buttons per modalità upload */
+.upload-mode-radio {
+    display: inline-flex;
+    gap: 30px;
+    justify-content: center;
+    padding: 10px 20px;
+    background: #f9fafb;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+}
+
+.upload-mode-radio label {
+    font-weight: 600;
+    color: #374151;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.upload-mode-radio label:hover {
+    color: #7a42ff;
+}
+
+.upload-mode-radio input[type="radio"]:checked + label {
+    color: #7a42ff;
+}
+
+/* Container flex per box affiancati */
+.upload-boxes-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 25px;
+    margin-top: 25px;
+}
+
+/* Container singolo box (viola o verde) */
+.upload-box-container {
+    flex: 0 0 45%;
+    max-width: 500px;
+    min-height: 280px;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Animazione entrata/uscita */
+.upload-box-container {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.upload-box-container[style*="display: none"] {
+    opacity: 0;
+    transform: scale(0.95);
+    pointer-events: none;
+}
+
+/* Box upload generico */
+.upload-box {
+    width: 100%;
+    min-height: 220px;
+    padding: 25px;
+    border-radius: 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* BOX VIOLA (Raw) */
+.upload-box-raw {
+    border: 3px dashed #7a42ff;
+    background: linear-gradient(135deg, #faf7ff 0%, #f1eaff 100%);
+}
+
+.upload-box-raw:hover {
+    background: linear-gradient(135deg, #f1eaff 0%, #e9dcff 100%);
+    border-color: #9d6fff;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(122, 66, 255, 0.2);
+}
+
+/* BOX VERDE (CSV) */
+.upload-box-csv {
+    border: 3px dashed #10b981;
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+}
+
+.upload-box-csv:hover {
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    border-color: #34d399;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(16, 185, 129, 0.2);
+}
+
+/* Lista file raw (pills viola) */
+.file-list-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    max-height: 100px;
+    overflow-y: auto;
+    padding: 10px 0;
+    margin: 0;
+    list-style: none;
+}
+
+.file-list-pills li {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    background: #efe6ff;
+    color: #5b21b6;
+    font-weight: 600;
+    font-size: 13px;
+    border-radius: 20px;
+    box-shadow: 0 2px 6px rgba(122, 66, 255, 0.25);
+    transition: transform 0.2s ease;
+}
+
+.file-list-pills li:hover {
+    transform: scale(1.05);
+}
+
+/* Preview CSV (verde) */
+.csv-preview {
+    padding: 12px;
+    background: rgba(16, 185, 129, 0.1);
+    border-radius: 10px;
+    color: #047857;
+    font-weight: 600;
+    font-size: 14px;
+    min-height: 40px;
+}
+
+/* Bottone "Analizza Raw" viola */
+.analyze-button {
+    background: linear-gradient(135deg, #7a42ff 0%, #9d6fff 100%);
+    transition: all 0.3s ease;
+}
+
+.analyze-button:hover {
+    background: linear-gradient(135deg, #5e32cc 0%, #7a42ff 100%);
+    box-shadow: 0 6px 16px rgba(122, 66, 255, 0.35);
+    transform: translateY(-2px);
+}
+
+.analyze-button:active {
+    transform: translateY(0);
+}
+
+/* Animazione fade-in per nuovi elementi */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.upload-box-container {
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* Scrollbar personalizzata per lista file */
+.file-list-pills::-webkit-scrollbar {
+    width: 6px;
+}
+
+.file-list-pills::-webkit-scrollbar-track {
+    background: #f3f4f6;
+    border-radius: 10px;
+}
+
+.file-list-pills::-webkit-scrollbar-thumb {
+    background: #c9b2ff;
+    border-radius: 10px;
+}
+
+.file-list-pills::-webkit-scrollbar-thumb:hover {
+    background: #7a42ff;
+}
+
+/* Bottone "Analizza CSV" verde */
+.analyze-button-green {
+    background: linear-gradient(135deg, #10b981 0%, #34d399 100%) !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3) !important;
+}
+
+.analyze-button-green:hover {
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4) !important;
+    transform: translateY(-2px) !important;
+}
+
+.analyze-button-green:active {
+    background: linear-gradient(135deg, #047857 0%, #059669 100%) !important;
+    transform: translateY(0) !important;
+}

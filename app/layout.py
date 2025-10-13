@@ -2,50 +2,95 @@ from dash import html, dcc
 
 layout = html.Div([
 
-    # === BOX 1: Caricamento file ===
+    # === BOX 1: Caricamento file (Side-by-Side) ===
     html.Div([
         html.H1("Protein Anomaly Detector", className="app-title"),
         html.P(
             "Carica una simulazione molecolare per analizzare le dinamiche della proteina.",
             className="description"
         ),
-        dcc.Upload(
-            id='upload-files',
-            multiple=True,
-            className='dash-uploader',
-            children=html.Div([
-                html.Div(
-                    id='upload-text',
-                    children=[
-                        "Trascina qui i file o ",
-                        html.A("selezionali dal tuo computer")
-                    ],
-                    style={'fontWeight': 'bold', 'color': '#7a42ff'}
+
+        # Radio buttons per scegliere modalità
+        html.Div([
+            dcc.RadioItems(
+                id='upload-mode',
+                options=[
+                    {'label': ' Carica file angolari raw (.txt)', 'value': 'raw'},
+                    {'label': ' Carica CSV preprocessato (PCA)', 'value': 'preprocessed'}
+                ],
+                value='raw',
+                inline=True,
+                className='upload-mode-radio'
+            )
+        ], style={'textAlign': 'center', 'marginBottom': '20px'}),
+
+        # Contenitore flex per box side-by-side
+        html.Div([
+            # BOX VIOLA: Upload Raw
+            html.Div([
+                dcc.Upload(
+                    id='upload-files',
+                    multiple=True,
+                    className='upload-box upload-box-raw',
+                    children=html.Div([
+                        html.Div([
+                            "📂 Trascina file .txt o ",
+                            html.A("selezionali", style={'textDecoration': 'underline', 'cursor': 'pointer'})
+                        ], style={'fontWeight': 'bold', 'color': '#7a42ff', 'marginBottom': '15px'}),
+                        html.Ul(id='file-list', className='file-list-pills')
+                    ])
                 ),
-                html.Ul(id='file-list')
-            ]),
-            style={
-                'width': '100%',
-                'height': '250px',
-                'lineHeight': '20px',
-                'borderWidth': '2px',
-                'borderStyle': 'dashed',
-                'borderRadius': '5px',
-                'textAlign': 'center',
-                'cursor': 'pointer',
-                'backgroundColor': '#f8f8f8',
-                'color': '#7a42ff',
-                'userSelect': 'none',
-            }
-        ),
-        html.Button(
-            "Analizza Dati Raw",
-            id='analyze-raw-button',
-            n_clicks=0,
-            className="analyze-button",
-            style={'marginTop': '10px'}
-        ),
-        dcc.Store(id='stored-raw-data')  # Nuovo store per dati raw
+                html.Button(
+                    "🔬 Analizza Dati Raw",
+                    id='analyze-raw-button',
+                    n_clicks=0,
+                    className="analyze-button",
+                    style={'marginTop': '15px'}
+                )
+            ], id='upload-raw-container', className='upload-box-container'),
+
+            # BOX VERDE: Upload CSV
+            html.Div([
+                dcc.Upload(
+                    id='upload-csv',
+                    multiple=False,
+                    className='upload-box upload-box-csv',
+                    children=html.Div([
+                        html.Div([
+                            "📊 Trascina CSV preprocessato o ",
+                            html.A("selezionalo", style={'textDecoration': 'underline', 'cursor': 'pointer'})
+                        ], style={'fontWeight': 'bold', 'color': '#10b981', 'marginBottom': '15px'}),
+                        html.Div(id='csv-file-name', className='csv-preview')
+                    ])
+                ),
+
+                html.Div([
+                    html.Label("Numero componenti PCA:",
+                               style={'fontWeight': 'bold', 'marginTop': '15px', 'color': '#047857'}),
+                    dcc.Input(
+                        id='csv-num-components',
+                        type='number',
+                        min=1,
+                        max=20,
+                        step=1,
+                        value=3,
+                        placeholder='es. 3',
+                        style={'width': '120px', 'marginTop': '5px', 'display': 'block'}
+                    )
+                ], style={'marginTop': '10px'}),
+
+                html.Button(
+                    "📊 Analizza CSV Preprocessato",
+                    id='analyze-csv-button',
+                    n_clicks=0,
+                    className="analyze-button analyze-button-green",
+                    style={'marginTop': '15px'}
+                )
+            ], id='upload-csv-container', className='upload-box-container', style={'display': 'none'})
+
+        ], className='upload-boxes-wrapper'),
+
+        dcc.Store(id='stored-raw-data')
     ], className='box'),
 
     # === BOX 2: Risultati Dati Raw (sempre visibile dopo analisi) ===
