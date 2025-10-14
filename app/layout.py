@@ -163,25 +163,141 @@ layout = html.Div([
 
     # === BOX 5: Clustering ===
     html.Div([
-        html.H4("🎯 Clustering", className="panel-title"),
-        html.Label("Seleziona algoritmo di clustering:"),
+        html.H4("🎯 Clustering", className="panel-title", style={'marginBottom': '10px'}),
+        html.P("Raggruppa i dati PCA in cluster omogenei",
+               style={'fontSize': '13px', 'color': '#666', 'marginBottom': '15px'}),
+
+        html.Label("Seleziona algoritmo:", style={'fontWeight': 'bold'}),
         dcc.Dropdown(
             id='clustering-algorithm',
             options=[
-                {'label': 'DBSCAN', 'value': 'dbscan'},
-                {'label': 'OPTICS', 'value': 'optics'},
-                {'label': 'Spectral Clustering', 'value': 'spectral'},
+                {'label': '🔵 DBSCAN (Densità)', 'value': 'dbscan'},
+                {'label': '🟢 OPTICS (Gerarchia)', 'value': 'optics'},
+                {'label': '🟣 Spectral (Grafo)', 'value': 'spectral'},
             ],
             value='dbscan',
             clearable=False
         ),
-        html.Div(id='clustering-parameters', style={'marginTop': '10px'}),
+
+        html.Div([
+            # DBSCAN
+            html.Div([
+                html.H5("DBSCAN", style={'color': '#7a42ff', 'marginBottom': '10px'}),
+
+                html.Label("🔍 Raggio di ricerca:", style={'fontWeight': 'bold'}),
+                html.P("Distanza massima tra punti vicini per formare un cluster",
+                       style={'fontSize': '11px', 'color': '#666', 'margin': '2px 0 5px'}),
+                dcc.Input(
+                    id='clustering-dbscan-eps',
+                    type='number',
+                    min=0.01,
+                    step=0.1,
+                    value=0.5,
+                    style={'width': '120px'}
+                ),
+
+                html.Br(),
+                html.Label("👥 Densità minima:", style={'fontWeight': 'bold', 'marginTop': '10px'}),
+                html.P("Numero minimo di punti per formare un cluster",
+                       style={'fontSize': '11px', 'color': '#666', 'margin': '2px 0 5px'}),
+                dcc.Input(
+                    id='clustering-dbscan-min-samples',
+                    type='number',
+                    min=1,
+                    step=1,
+                    value=15,
+                    style={'width': '120px'}
+                ),
+            ], id='params-clustering-dbscan', className='param-group',
+                style={'marginBottom': '15px'}),
+
+            # OPTICS
+            html.Div([
+                html.H5("OPTICS", style={'color': '#7a42ff', 'marginBottom': '10px'}),
+
+                html.Label("👥 Densità minima:", style={'fontWeight': 'bold'}),
+                html.P("Numero minimo di punti per formare un cluster",
+                       style={'fontSize': '11px', 'color': '#666', 'margin': '2px 0 5px'}),
+                dcc.Input(
+                    id='clustering-optics-min-samples',
+                    type='number',
+                    min=2,
+                    step=1,
+                    value=5,
+                    style={'width': '120px'}
+                ),
+
+                html.Br(),
+                html.Label("🎯 Sensibilità separazione:", style={'fontWeight': 'bold', 'marginTop': '10px'}),
+                html.P("Quanto distinti devono essere i cluster (0.01 = molto sensibile)",
+                       style={'fontSize': '11px', 'color': '#666', 'margin': '2px 0 5px'}),
+                dcc.Input(
+                    id='clustering-optics-xi',  # ✅ CORRETTO!
+                    type='number',
+                    min=0.0,
+                    max=1.0,
+                    step=0.01,
+                    value=0.01,
+                    style={'width': '120px'}
+                ),
+
+                html.Br(),
+                html.Label("📊 Dimensione minima (%):", style={'fontWeight': 'bold', 'marginTop': '10px'}),
+                html.P("Frazione minima del dataset per essere un cluster (0.1 = 10%)",
+                       style={'fontSize': '11px', 'color': '#666', 'margin': '2px 0 5px'}),
+                dcc.Input(
+                    id='clustering-optics-min-cluster-size',
+                    type='number',
+                    min=0.0,
+                    max=1.0,
+                    step=0.05,
+                    value=0.1,
+                    style={'width': '120px'}
+                ),
+            ], id='params-clustering-optics', className='param-group',
+                style={'display': 'none', 'marginBottom': '15px'}),
+
+            # Spectral
+            html.Div([
+                html.H5("Spectral Clustering", style={'color': '#7a42ff', 'marginBottom': '10px'}),
+
+                html.Label("🎯 Numero di gruppi:", style={'fontWeight': 'bold'}),
+                html.P("Quanti cluster vuoi identificare",
+                       style={'fontSize': '11px', 'color': '#666', 'margin': '2px 0 5px'}),
+                dcc.Input(
+                    id='clustering-spectral-n-clusters',
+                    type='number',
+                    min=2,
+                    step=1,
+                    value=3,
+                    style={'width': '120px'}
+                ),
+
+                html.Br(),
+                html.Label("🔗 Metodo similarità:", style={'fontWeight': 'bold', 'marginTop': '10px'}),
+                html.P("Come calcolare la vicinanza tra punti",
+                       style={'fontSize': '11px', 'color': '#666', 'margin': '2px 0 5px'}),
+                dcc.Dropdown(
+                    id='clustering-spectral-affinity',
+                    options=[
+                        {'label': 'K vicini più prossimi', 'value': 'nearest_neighbors'},
+                        {'label': 'Kernel Gaussiano (RBF)', 'value': 'rbf'},
+                    ],
+                    value='nearest_neighbors',
+                    clearable=False,
+                    style={'width': '200px'}
+                ),
+            ], id='params-clustering-spectral', className='param-group',
+                style={'display': 'none', 'marginBottom': '15px'}),
+
+        ], style={'marginTop': '10px'}),
+
         html.Button(
-            "Esegui il Clustering",
+            "Esegui Clustering",
             id='proceed-button',
             n_clicks=0,
             className="proceed-button",
-            style={'marginTop': '10px'}
+            style={'marginTop': '15px'}
         ),
         dcc.Loading(
             id="loading-clustering",
@@ -423,7 +539,7 @@ layout = html.Div([
             # DBSCAN
             html.Div([
                 html.H5("DBSCAN"),
-                html.Label("eps:"),
+                html.Label("Raggio di ricerca (eps):"),
                 dcc.Input(
                     id='dbscan-eps',
                     type='number',
@@ -434,7 +550,7 @@ layout = html.Div([
                     placeholder='es. 0.25'
                 ),
                 html.Br(),
-                html.Label("Numero min samples:"),
+                html.Label("Numero minimo samples:"),
                 dcc.Input(
                     id='dbscan-min-samples',
                     type='number',
@@ -460,7 +576,7 @@ layout = html.Div([
             # OPTICS
             html.Div([
                 html.H5("OPTICS"),
-                html.Label("Numero min samples:"),
+                html.Label("Numero minimo samples:"),
                 dcc.Input(
                     id='optics-min-samples',
                     type='number',
@@ -470,7 +586,7 @@ layout = html.Div([
                     style={'width': '120px'}
                 ),
                 html.Br(),
-                html.Label("xi:"),
+                html.Label("Sensibilità separazione (xi):"),
                 dcc.Input(
                     id='optics-xi',
                     type='number',
@@ -481,7 +597,7 @@ layout = html.Div([
                     style={'width': '120px'}
                 ),
                 html.Br(),
-                html.Label("Dimensione minimo cluster:"),
+                html.Label("Dimensione minima cluster:"),
                 dcc.Input(
                     id='optics-min-cluster-size',
                     type='number',

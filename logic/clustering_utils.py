@@ -32,7 +32,6 @@ def spectral_clustering(pca_df, n_clusters=3, affinity='nearest_neighbors', n_ne
 
 
 def plot_clusters_3d_plotly(pca_df, title="Clustering 3D"):
-
     pc_cols = [c for c in pca_df.columns if c.startswith("PC")]
     fig = go.Figure()
 

@@ -5,8 +5,8 @@ import pandas as pd
 from dash import Input, Output, State, html, dash_table, dcc, no_update
 import plotly.express as px
 import plotly.graph_objs as go
-
-from logic.pca_utils import compute_windowed_pca, convert_to_wide_format
+from dash import html, dcc, dash_table
+from typing import Dict
 from logic.clustering_utils import dbscan_clustering, optics_clustering, spectral_clustering
 from logic.anomaly_detection import (
     train_linear_regression, detect_anomalies_linear,
@@ -20,6 +20,8 @@ from logic.anomaly_detection import (
     train_kmeans, detect_anomalies_kmeans
 )
 
+import logic.anomaly_detection as ad_mod
+_original_calculate_thresholds = ad_mod.calculate_variable_thresholds
 
 def apply_light_theme(fig, title=None, reverse_y=False):
     """
@@ -46,6 +48,127 @@ def apply_light_theme(fig, title=None, reverse_y=False):
 
     fig.update_layout(**layout_updates)
     return fig
+
+def generate_anomaly_text_summary(anomaly_data: Dict[str, Dict], n_total_windows: int) -> html.Div:
+    """
+    Genera box testuale riepilogo anomalie.
+
+    Args:
+        anomaly_data: Dict {PC: {times: list, errors: list, threshold: float}}
+        n_total_windows: Totale finestre analizzate
+
+    Returns:
+        html.Div: Componente UI con statistiche
+    """
+    # Calcola totale anomalie
+    total_anomalies = sum(len(v['times']) for v in anomaly_data.values())
+    pct = (100 * total_anomalies / n_total_windows) if n_total_windows > 0 else 0
+
+    # Box principale
+    summary_box = html.Div([
+        html.H4("📊 ANOMALIE RILEVATE", style={
+            'color': '#7a42ff',
+            'marginBottom': '10px',
+            'fontSize': '18px',
+            'fontWeight': 'bold'
+        }),
+        html.Hr(style={'margin': '10px 0', 'borderColor': '#e0e0e0'}),
+
+        # Statistiche globali
+        html.Div([
+            html.Span(f"Finestre analizzate: ", style={'fontWeight': 'bold'}),
+            html.Span(f"{n_total_windows}", style={'color': '#374151'})
+        ], style={'marginBottom': '8px'}),
+
+        html.Div([
+            html.Span("🔴 Anomalie: ", style={'fontWeight': 'bold', 'color': '#dc2626'}),
+            html.Span(f"{total_anomalies} ({pct:.1f}%)", style={'color': '#dc2626', 'fontSize': '16px'})
+        ], style={'marginBottom': '15px'}),
+
+        # Dettaglio per PC
+        html.Div("Per componente:", style={
+            'fontWeight': 'bold',
+            'marginBottom': '8px',
+            'color': '#374151'
+        }),
+        html.Ul([
+            html.Li([
+                html.Span(f"{pc}: ", style={'fontWeight': 'bold', 'color': '#7a42ff'}),
+                html.Span(f"{len(data['times'])} anomalie", style={'color': '#374151'}),
+                html.Span(
+                    f" (max: Time {int(max(data['times']))} → {max(data['errors']):.2f}σ)"
+                    if data['times'] else " (nessuna)",
+                    style={'color': '#6b7280', 'fontSize': '13px'}
+                )
+            ], style={'marginBottom': '5px'})
+            for pc, data in sorted(anomaly_data.items())
+        ], style={'paddingLeft': '20px', 'marginTop': '5px'})
+
+    ], style={
+        'backgroundColor': '#f9fafb',
+        'border': '2px solid #7a42ff',
+        'borderRadius': '8px',
+        'padding': '15px',
+        'marginBottom': '20px',
+        'boxShadow': '0 2px 8px rgba(122, 66, 255, 0.15)'
+    })
+
+    # Tabella dettagliata (collapsable)
+    rows = []
+    for pc, data in sorted(anomaly_data.items()):
+        for t, e in zip(data['times'], data['errors']):
+            rows.append({
+                'PC': pc,
+                'Time': int(t),
+                'Error (σ)': round(e, 3),
+                'Threshold': round(data['threshold'], 3)
+            })
+
+    # Ordina per Time
+    rows = sorted(rows, key=lambda x: x['Time'])
+
+    table = html.Details([
+        html.Summary("📋 Dettaglio anomalie (clicca per espandere)", style={
+            'cursor': 'pointer',
+            'color': '#7a42ff',
+            'fontWeight': 'bold',
+            'marginBottom': '10px',
+            'fontSize': '14px'
+        }),
+        dash_table.DataTable(
+            data=rows,
+            columns=[
+                {'name': 'PC', 'id': 'PC'},
+                {'name': 'Time', 'id': 'Time'},
+                {'name': 'Error (σ)', 'id': 'Error (σ)'},
+                {'name': 'Threshold', 'id': 'Threshold'}
+            ],
+            style_table={'overflowX': 'auto'},
+            style_cell={
+                'textAlign': 'left',
+                'padding': '8px',
+                'fontSize': '13px'
+            },
+            style_header={
+                'backgroundColor': '#7a42ff',
+                'color': 'white',
+                'fontWeight': 'bold'
+            },
+            style_data_conditional=[
+                {
+                    'if': {'row_index': 'odd'},
+                    'backgroundColor': '#f9fafb'
+                }
+            ]
+        ) if rows else html.Div("Nessuna anomalia rilevata", style={
+            'color': '#6b7280',
+            'fontStyle': 'italic',
+            'padding': '10px'
+        })
+    ], style={'marginTop': '15px'})
+
+    return html.Div([summary_box, table])
+
 
 
 def register_callbacks(app):
@@ -698,44 +821,100 @@ def register_callbacks(app):
             style(algorithm == 'kmeans_vector'),
         )
 
+    @app.callback(
+        [Output('params-clustering-dbscan', 'style'),
+         Output('params-clustering-optics', 'style'),
+         Output('params-clustering-spectral', 'style')],
+        Input('clustering-algorithm', 'value')
+    )
+    def toggle_clustering_params(algorithm):
+        """Mostra parametri in base all'algoritmo selezionato"""
+        dbscan_style = {'marginBottom': '15px'} if algorithm == 'dbscan' else {'display': 'none'}
+        optics_style = {'marginBottom': '15px'} if algorithm == 'optics' else {'display': 'none'}
+        spectral_style = {'marginBottom': '15px'} if algorithm == 'spectral' else {'display': 'none'}
+        return dbscan_style, optics_style, spectral_style
 
-    # --- Clustering ---
     @app.callback(
         Output('clustering-output', 'children'),
         Input('proceed-button', 'n_clicks'),
         State('stored-pca-data', 'data'),
-        State('clustering-algorithm', 'value')
+        State('clustering-algorithm', 'value'),
+        State('clustering-dbscan-eps', 'value'),
+        State('clustering-dbscan-min-samples', 'value'),
+        State('clustering-optics-min-samples', 'value'),
+        State('clustering-optics-xi', 'value'),  # ✅ NUOVO
+        State('clustering-optics-min-cluster-size', 'value'),  # ✅ NUOVO
+        State('clustering-spectral-n-clusters', 'value'),
+        State('clustering-spectral-affinity', 'value'),
     )
-    def perform_clustering(n_clicks, stored_pca_json, algorithm):
+    def perform_clustering(n_clicks, stored_pca_json, algorithm,
+                           db_eps, db_min_samples,
+                           op_min_samples, op_xi, op_min_cluster_size,  # ✅ AGGIORNATO
+                           sp_n_clusters, sp_affinity):
+
         if not n_clicks or not stored_pca_json:
             return no_update
+
+        def float_or(v, default):
+            try:
+                return float(v) if v is not None else default
+            except:
+                return default
+
+        def int_or(v, default):
+            try:
+                return int(v) if v is not None else default
+            except:
+                return default
+
         try:
             pca_df = pd.read_json(io.StringIO(stored_pca_json), orient='split')
             pc_cols = [c for c in pca_df.columns if c.startswith("PC")]
 
-            if algorithm == 'dbscan':
-                pca_df = dbscan_clustering(pca_df[pc_cols])
-            elif algorithm == 'optics':
-                pca_df = optics_clustering(pca_df[pc_cols])
-            elif algorithm == 'spectral':
-                pca_df = spectral_clustering(pca_df[pc_cols])
 
+            if algorithm == 'dbscan':
+                eps = float_or(db_eps, 0.5)
+                min_samples = int_or(db_min_samples, 5)
+                pca_df = dbscan_clustering(pca_df[pc_cols], eps=eps, min_samples=min_samples)
+
+
+
+            elif algorithm == 'optics':
+                min_samples = int_or(op_min_samples, 5)
+                xi = float_or(op_xi, 0.01)  # ✅ NUOVO
+                min_cluster_size = float_or(op_min_cluster_size, 0.1)  # ✅ NUOVO
+                pca_df = optics_clustering(pca_df[pc_cols], min_samples=min_samples, xi=xi,
+                                           min_cluster_size=min_cluster_size)
+
+
+            elif algorithm == 'spectral':
+                n_clusters = int_or(sp_n_clusters, 3)
+                affinity = sp_affinity if sp_affinity else 'nearest_neighbors'
+                pca_df = spectral_clustering(pca_df[pc_cols], n_clusters=n_clusters, affinity=affinity)
+
+            # ✅ IDENTICO ALL'ORIGINALE: scatter 3D
             fig_cluster = go.Figure()
             for cluster in pca_df['Cluster'].unique():
                 cluster_points = pca_df[pca_df['Cluster'] == cluster]
                 fig_cluster.add_trace(go.Scatter3d(
                     x=cluster_points[pc_cols[0]],
-                    y=cluster_points[pc_cols[1]] if len(pc_cols) > 1 else [0]*len(cluster_points),
-                    z=cluster_points[pc_cols[2]] if len(pc_cols) > 2 else [0]*len(cluster_points),
+                    y=cluster_points[pc_cols[1]] if len(pc_cols) > 1 else [0] * len(cluster_points),
+                    z=cluster_points[pc_cols[2]] if len(pc_cols) > 2 else [0] * len(cluster_points),
                     mode='markers',
                     marker=dict(size=4),
                     name=f'Cluster {cluster}'
                 ))
             fig_cluster = apply_light_theme(fig_cluster, f"{algorithm.upper()} Clustering")
+
             return html.Div([dcc.Graph(figure=fig_cluster)])
+
         except Exception as e:
             tb = traceback.format_exc()
-            return html.Div([html.B("Errore clustering:"), html.Pre(str(e)), html.Pre(tb)])
+            return html.Div([
+                html.B("Errore clustering:"),
+                html.Pre(str(e)),
+                html.Pre(tb)
+            ])
 
     # --- Anomaly Detection ---
     @app.callback(
@@ -764,7 +943,7 @@ def register_callbacks(app):
         # LOF
         State('lof-n-neighbors', 'value'),
         State('lof-contamination', 'value'),
-        # --- aggiunte: stati parametri clustering ---
+        # Clustering
         State('dbscan-eps', 'value'),
         State('dbscan-min-samples', 'value'),
         State('dbscan-knn-k', 'value'),
@@ -784,92 +963,107 @@ def register_callbacks(app):
                                   db_eps, db_min_samples, db_knn_k,
                                   op_min_samples, op_xi, op_min_cluster_size,
                                   km_n_clusters, km_random_state):
+        """
+        Callback per anomaly detection con riepilogo testuale + grafici.
+        """
         if not n_clicks or not stored_pca_json:
             return no_update
 
-        def int_or(v, d):
+        def int_or(val, default):
             try:
-                return d if v in (None, '') else int(v)
+                return int(val) if val not in (None, '') else default
             except Exception:
-                return d
+                return default
 
-        def float_or(v, d):
+        def float_or(val, default):
             try:
-                return d if v in (None, '') else float(v)
+                return float(val) if val not in (None, '') else default
             except Exception:
-                return d
+                return default
 
         n_train = int_or(n_train, 180)
         w_size = int_or(w_size, 20)
-        pen_value = int_or(pen_value, 1)
         num_models = int_or(num_models, 10)
 
-        if n_train < 30:
-            return html.Div("n troppo basso (>=30).", style={'color': 'red'})
-        if w_size < 3:
-            return html.Div("w troppo basso (>=3).", style={'color': 'red'})
-
         try:
-            import logic.anomaly_detection as ad_mod
-            original_calc = ad_mod.calculate_variable_thresholds
+            # 🔧 Sovrascrivi calculate_variable_thresholds se pen_value è fornito
+            if pen_value not in (None, ''):
+                pen_val = int_or(pen_value, 1)
 
-            def _calc_with_custom_pen(errors, pen=pen_value):
-                return original_calc(errors, pen=pen_value)
+                def calculate_variable_thresholds_override(errors, pen=None):
+                    """Override che forza pen_value"""
+                    return _original_calculate_thresholds(errors, pen=pen_val)
 
-            ad_mod.calculate_variable_thresholds = _calc_with_custom_pen
+                ad_mod.calculate_variable_thresholds = calculate_variable_thresholds_override
 
+            # Carica dati PCA
             pca_df = pd.read_json(io.StringIO(stored_pca_json), orient='split')
-            if n_train >= len(pca_df) - w_size - 5:
-                return html.Div("n troppo grande rispetto ai dati.", style={'color': 'red'})
+            n_total_windows = len(pca_df) - n_train - w_size
 
-            # --- Regressione e Bagging (esistente) ---
+            # === MODELLI DI REGRESSIONE ===
             if model_name == "linreg":
-                models, *_ = train_linear_regression(pca_df, n=n_train, w=w_size)
-                figs, *_ = detect_anomalies_linear(pca_df, models, n=n_train, w=w_size)
+                models, _ = train_linear_regression(pca_df, n=n_train, w=w_size)
+                figs, anomaly_data = detect_anomalies_linear(pca_df, models, n=n_train, w=w_size)
 
             elif model_name == "linreg_bagging":
-                models, *_ = train_linear_regression_bagging(pca_df, n=n_train, w=w_size, num_models=num_models)
-                figs, *_ = detect_anomalies_linear_bagging(pca_df, models, n=n_train, w=w_size)
+                models, _ = train_linear_regression_bagging(pca_df, n=n_train, w=w_size, num_models=num_models)
+                figs, anomaly_data = detect_anomalies_linear_bagging(pca_df, models, n=n_train, w=w_size)
 
             elif model_name == "rf_bagging":
-                models, *_ = train_random_forest_bagging(pca_df, n=n_train, w=w_size, num_models=num_models)
-                figs, *_ = detect_anomalies_random_forest_bagging(pca_df, models, n=n_train, w=w_size)
+                n_est = int_or(rf_n_estimators, 100)
+                max_d = int_or(rf_max_depth, 10)
+                min_split = int_or(rf_min_split, 2)
+                models, _ = train_random_forest_bagging(
+                    pca_df, n=n_train, w=w_size, num_models=num_models,
+                    n_estimators=n_est, max_depth=max_d, min_samples_split=min_split
+                )
+                figs, anomaly_data = detect_anomalies_random_forest_bagging(pca_df, models, n=n_train, w=w_size)
 
             elif model_name == "gb_bagging":
-                models, *_ = train_gradient_boosting_bagging(pca_df, n=n_train, w=w_size, num_models=num_models)
-                figs, *_ = detect_anomalies_gradient_boosting_bagging(pca_df, models, n=n_train, w=w_size)
+                n_est = int_or(gb_n_estimators, 100)
+                lr = float_or(gb_learning_rate, 0.1)
+                max_d = int_or(gb_max_depth, 3)
+                models, _ = train_gradient_boosting_bagging(
+                    pca_df, n=n_train, w=w_size, num_models=num_models,
+                    n_estimators=n_est, learning_rate=lr, max_depth=max_d
+                )
+                figs, anomaly_data = detect_anomalies_gradient_boosting_bagging(pca_df, models, n=n_train, w=w_size)
 
             elif model_name == "et_bagging":
-                models, *_ = train_extra_trees_bagging(pca_df, n=n_train, w=w_size, num_models=num_models)
-                figs, *_ = detect_anomalies_extra_trees_bagging(pca_df, models, n=n_train, w=w_size)
+                n_est = int_or(et_n_estimators, 100)
+                max_d = int_or(et_max_depth, 10)
+                min_split = int_or(et_min_split, 2)
+                models, _ = train_extra_trees_bagging(
+                    pca_df, n=n_train, w=w_size, num_models=num_models,
+                    n_estimators=n_est, max_depth=max_d, min_samples_split=min_split
+                )
+                figs, anomaly_data = detect_anomalies_extra_trees_bagging(pca_df, models, n=n_train, w=w_size)
 
-            # --- Distanza (esistente) ---
+            # === MODELLI BASATI SU DISTANZE ===
             elif model_name == "lof":
                 n_neighbors = int_or(lof_n_neighbors, 20)
                 contamination = float_or(lof_contamination, 0.05)
-                models, *_ = train_lof(pca_df, n=n_train, w=w_size,
-                                       n_neighbors=n_neighbors,
-                                       contamination=contamination)
-                figs, *_ = detect_anomalies_lof(pca_df, models, n=n_train, w=w_size)
+                models, _ = train_lof(pca_df, n=n_train, w=w_size,
+                                      n_neighbors=n_neighbors, contamination=contamination)
+                figs, anomaly_data = detect_anomalies_lof(pca_df, models, n=n_train, w=w_size)
 
             elif model_name == "matrix_profile":
-                figs, *_ = detect_matrix_profile(pca_df, n=n_train, w=w_size)
+                figs, anomaly_data = detect_matrix_profile(pca_df, n=n_train, w=w_size)
 
-            # --- Clustering-based (nuovi) ---
+            # === MODELLI BASATI SU CLUSTERING ===
             elif model_name == "dbscan_vector":
                 eps = float_or(db_eps, 0.25)
                 min_samples = int_or(db_min_samples, 15)
                 knn_k = None if db_knn_k in (None, '') else int_or(db_knn_k, None)
-                figs, *_ = detect_anomalies_dbscan(
-                    pca_df, n=n_train, w=w_size,
-                    eps=eps, min_samples=min_samples, knn_k=knn_k
+                figs, anomaly_data = detect_anomalies_dbscan(
+                    pca_df, n=n_train, w=w_size, eps=eps, min_samples=min_samples, knn_k=knn_k
                 )
 
             elif model_name == "optics_vector":
                 min_s = int_or(op_min_samples, 5)
                 xi = float_or(op_xi, 0.01)
                 min_clu = float_or(op_min_cluster_size, 0.1)
-                figs, *_ = detect_anomalies_optics(
+                figs, anomaly_data = detect_anomalies_optics(
                     pca_df, n=n_train, w=w_size,
                     min_samples=min_s, xi=xi, min_cluster_size=min_clu
                 )
@@ -877,22 +1071,46 @@ def register_callbacks(app):
             elif model_name == "kmeans_vector":
                 k = int_or(km_n_clusters, 3)
                 rs = int_or(km_random_state, 42)
-                models, *_ = train_kmeans(pca_df, n=n_train, w=w_size, n_clusters=k, random_state=rs)
-                figs, *_ = detect_anomalies_kmeans(pca_df, models, n=n_train, w=w_size)
+                models, _ = train_kmeans(pca_df, n=n_train, w=w_size, n_clusters=k, random_state=rs)
+                figs, anomaly_data = detect_anomalies_kmeans(pca_df, models, n=n_train, w=w_size)
 
             else:
-                return html.Div("Modello non supportato.", style={'color': 'red'})
+                return html.Div("⚠️ Modello non supportato.", style={'color': '#dc2626', 'padding': '20px'})
 
+            # Genera riepilogo testuale
+            text_summary = generate_anomaly_text_summary(anomaly_data, n_total_windows)
+
+            # Applica tema chiaro ai grafici
             figs = [apply_light_theme(f) for f in figs]
-            return html.Div([dcc.Graph(figure=f) for f in figs])
+
+            # Output finale
+            return html.Div([
+                text_summary,
+                html.Hr(style={'margin': '20px 0', 'borderColor': '#e0e0e0'}),
+                html.H4("📈 Grafici Anomalie", style={'color': '#7a42ff', 'marginBottom': '15px'}),
+                html.Div([dcc.Graph(figure=f) for f in figs], style={'marginTop': '20px'})
+            ])
 
         except Exception as e:
             tb = traceback.format_exc()
-            return html.Div([html.B("Errore anomaly detection:"), html.Pre(str(e)), html.Pre(tb)])
+            return html.Div([
+                html.B("❌ Errore anomaly detection", style={'color': '#dc2626'}),
+                html.Hr(style={'margin': '10px 0'}),
+                html.Pre(str(e), style={
+                    'background': '#fee2e2',
+                    'padding': '10px',
+                    'borderRadius': '6px',
+                    'fontSize': '13px'
+                }),
+                html.Details([
+                    html.Summary("📋 Stack trace completo (clicca per espandere)", style={
+                        'cursor': 'pointer',
+                        'color': '#7a42ff'
+                    }),
+                    html.Pre(tb, style={'fontSize': '11px', 'color': '#991b1b'})
+                ])
+            ])
+
         finally:
-            try:
-                import logic.anomaly_detection as ad_mod_final
-                if 'original_calc' in locals():
-                    ad_mod_final.calculate_variable_thresholds = original_calc
-            except Exception:
-                pass
+            # Ripristina funzione originale
+            ad_mod.calculate_variable_thresholds = _original_calculate_thresholds

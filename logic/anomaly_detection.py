@@ -16,8 +16,9 @@ import plotly.graph_objs as go
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
+
 # ======================================================
-# Funzioni generiche
+# Funzioni generiche (INVARIATE)
 # ======================================================
 
 def _to_float_array(a) -> np.ndarray:
@@ -45,11 +46,6 @@ def _ensure_time_column(df: pd.DataFrame) -> pd.Series:
 
 
 def _build_window_matrix(series: np.ndarray, w: int, end: int = None) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Costruisce:
-      - X: finestre (series[i-w:i]) per i in [w, end)
-      - y: valore series[i]
-    """
     series = _to_float_array(series)
     if end is None:
         end = len(series)
@@ -70,9 +66,6 @@ def _compute_fixed_threshold(errors_train: np.ndarray) -> float:
 
 
 def calculate_variable_thresholds(errors: np.ndarray, pen: int = 1) -> np.ndarray:
-    """
-    Soglia variabile per segmento: mean + 3*std su ogni segmento rilevato con PELT.
-    """
     errors = _to_float_array(errors)
     n = errors.size
     if n == 0:
@@ -85,7 +78,6 @@ def calculate_variable_thresholds(errors: np.ndarray, pen: int = 1) -> np.ndarra
         algo = rpt.Pelt(model='l2').fit(errors)
         bkps = algo.predict(pen=pen)
     except Exception:
-        # fallback: nessuna segmentazione
         return np.full(n, _compute_fixed_threshold(errors), dtype=float)
 
     var_thr = np.zeros(n, dtype=float)
@@ -114,7 +106,6 @@ def _generate_figures_per_pc(time_idx: np.ndarray,
     squared_errors = errors ** 2
     anomalies = errors > var_thr
 
-    # Figura 1: errori + soglie
     fig1 = go.Figure()
     fig1.add_trace(go.Scatter(x=time_idx, y=errors, mode='lines', name='Errore'))
     fig1.add_trace(go.Scatter(x=time_idx, y=[fixed_thr] * len(errors),
@@ -123,7 +114,6 @@ def _generate_figures_per_pc(time_idx: np.ndarray,
                               mode='lines', name='Soglia variabile', line=dict(dash='dot')))
     fig1.update_layout(title=f"{pc_name} - Errori")
 
-    # Figura 2: squared errors
     fig2 = go.Figure()
     fig2.add_trace(go.Scatter(x=time_idx, y=squared_errors, mode='lines', name='Errore^2'))
     fig2.add_trace(go.Scatter(x=time_idx, y=[fixed_thr ** 2] * len(errors),
@@ -132,12 +122,10 @@ def _generate_figures_per_pc(time_idx: np.ndarray,
                               mode='lines', name='Soglia variabile^2', line=dict(dash='dot')))
     fig2.update_layout(title=f"{pc_name} - Squared Errors")
 
-    # Figura 3: serie + anomalie
     fig3 = go.Figure()
     full_time = np.arange(len(pc_series))
     fig3.add_trace(go.Scatter(x=full_time, y=pc_series, mode='lines', name=pc_name))
     if errors.size > 0:
-        # ridimensiono gli errori per sovrapporli alla scala della serie
         e = errors.copy()
         s = pc_series
         if np.std(e) > 1e-12 and np.std(s) > 1e-12:
@@ -155,8 +143,41 @@ def _generate_figures_per_pc(time_idx: np.ndarray,
 
     return [fig1, fig2, fig3]
 
+
 # ======================================================
-# Modelli di Regressione
+# 🆕 Helper per Estrarre Anomaly Data
+# ======================================================
+
+def _extract_anomaly_data(errors_all: Dict[str, np.ndarray],
+                          thresholds_all: Dict[str, Dict],
+                          time_all: Dict[str, np.ndarray]) -> Dict[str, Dict]:
+    """
+    Estrae dati strutturati delle anomalie da errors/thresholds.
+
+    Returns:
+        Dict {PC: {times: list, errors: list, threshold: float}}
+    """
+    anomaly_data = {}
+
+    for pc, errors in errors_all.items():
+        var_thr = thresholds_all[pc].get('variable', np.array([]))
+        if var_thr.size != errors.size:
+            var_thr = np.full_like(errors, thresholds_all[pc]['fixed'])
+
+        anomalies_mask = errors > var_thr
+        time_idx = time_all.get(pc, np.arange(len(errors)))
+
+        anomaly_data[pc] = {
+            'times': time_idx[anomalies_mask].tolist(),
+            'errors': errors[anomalies_mask].tolist(),
+            'threshold': float(thresholds_all[pc]['fixed'])
+        }
+
+    return anomaly_data
+
+
+# ======================================================
+# Linear Regression
 # ======================================================
 
 def train_linear_regression(df: pd.DataFrame, n: int, w: int):
@@ -178,7 +199,7 @@ def train_linear_regression(df: pd.DataFrame, n: int, w: int):
 def detect_anomalies_linear(df: pd.DataFrame, models: Dict[str, Any], n: int, w: int):
     pc_cols = _extract_pc_columns(df)
     time_full = _ensure_time_column(df)
-    figs_all, errors_all, thresholds_all = [], {}, {}
+    figs_all, errors_all, thresholds_all, time_all = [], {}, {}, {}
 
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
@@ -203,10 +224,15 @@ def detect_anomalies_linear(df: pd.DataFrame, models: Dict[str, Any], n: int, w:
         errors_all[pc] = errors
         thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
         time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.arange(w, len(series))
+        time_all[pc] = time_idx
         figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
 
-    return figs_all, errors_all, thresholds_all
+    # 🆕 Estrai anomaly data
+    anomaly_data = _extract_anomaly_data(errors_all, thresholds_all, time_all)
+
+    return figs_all, anomaly_data
+
 
 # ======================================================
 # Linear Regression + Bagging
@@ -242,7 +268,7 @@ def train_linear_regression_bagging(df: pd.DataFrame, n: int, w: int,
 def detect_anomalies_linear_bagging(df: pd.DataFrame, bag_models: Dict[str, List[Any]], n: int, w: int):
     pc_cols = _extract_pc_columns(df)
     time_full = _ensure_time_column(df)
-    figs_all, errors_all, thresholds_all = [], {}, {}
+    figs_all, errors_all, thresholds_all, time_all = [], {}, {}, {}
 
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
@@ -268,10 +294,15 @@ def detect_anomalies_linear_bagging(df: pd.DataFrame, bag_models: Dict[str, List
         errors_all[pc] = errors
         thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
         time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.arange(w, len(series))
+        time_all[pc] = time_idx
         figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
 
-    return figs_all, errors_all, thresholds_all
+    # 🆕 Estrai anomaly data
+    anomaly_data = _extract_anomaly_data(errors_all, thresholds_all, time_all)
+
+    return figs_all, anomaly_data
+
 
 # ======================================================
 # Alberi + Bagging (RF / GB / ET)
@@ -307,7 +338,7 @@ def _train_tree_bagging(df: pd.DataFrame, n: int, w: int, num_models: int,
 def _detect_tree_bagging(df: pd.DataFrame, bag_models: Dict[str, List[Any]], n: int, w: int):
     pc_cols = _extract_pc_columns(df)
     time_full = _ensure_time_column(df)
-    figs_all, errors_all, thresholds_all = [], {}, {}
+    figs_all, errors_all, thresholds_all, time_all = [], {}, {}, {}
 
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
@@ -333,10 +364,14 @@ def _detect_tree_bagging(df: pd.DataFrame, bag_models: Dict[str, List[Any]], n: 
         errors_all[pc] = errors
         thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
         time_idx = time_full.iloc[idxs].values if len(time_full) == len(series) else np.arange(w, len(series))
+        time_all[pc] = time_idx
         figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
 
-    return figs_all, errors_all, thresholds_all
+    # 🆕 Estrai anomaly data
+    anomaly_data = _extract_anomaly_data(errors_all, thresholds_all, time_all)
+
+    return figs_all, anomaly_data
 
 
 def train_random_forest_bagging(df: pd.DataFrame, n: int, w: int, num_models: int = 10,
@@ -380,6 +415,7 @@ def train_extra_trees_bagging(df: pd.DataFrame, n: int, w: int, num_models: int 
 def detect_anomalies_extra_trees_bagging(df: pd.DataFrame, models: Dict[str, List[Any]], n: int, w: int):
     return _detect_tree_bagging(df, models, n, w)
 
+
 # ======================================================
 # Local Outlier Factor
 # ======================================================
@@ -409,8 +445,8 @@ def train_lof(df: pd.DataFrame, n: int, w: int,
 def detect_anomalies_lof(df: pd.DataFrame, models: Dict[str, Any], n: int, w: int):
     pc_cols = _extract_pc_columns(df)
     time_full = _ensure_time_column(df)
+    figs_all, errors_all, thresholds_all, time_all = [], {}, {}, {}
 
-    figs_all, errors_all, thresholds_all = [], {}, {}
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
         model: LocalOutlierFactor = models.get(pc)
@@ -425,7 +461,6 @@ def detect_anomalies_lof(df: pd.DataFrame, models: Dict[str, Any], n: int, w: in
             var_thr = np.asarray([], dtype=float)
         else:
             X = np.asarray(windows, dtype=float)
-            # LOF: score_samples restituisce log-likelihood inverso, usiamo negativo come errore
             errors = -model.score_samples(X)
             train_cut = max(0, min(errors.size, n - w))
             train_errors = errors[:train_cut]
@@ -435,27 +470,28 @@ def detect_anomalies_lof(df: pd.DataFrame, models: Dict[str, Any], n: int, w: in
 
         errors_all[pc] = errors
         thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
+        time_all[pc] = time_idx
         figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
 
-    return figs_all, errors_all, thresholds_all
+    # 🆕 Estrai anomaly data
+    anomaly_data = _extract_anomaly_data(errors_all, thresholds_all, time_all)
+
+    return figs_all, anomaly_data
+
 
 # ======================================================
 # Matrix Profile (STUMP)
 # ======================================================
 
 def detect_matrix_profile(df: pd.DataFrame, n: int, w: int):
-    """
-    Usa stumpy.stump per la matrix profile della singola serie PC.
-    Errore = matrix profile, soglie calcolate come per gli altri modelli.
-    """
     try:
         import stumpy as stp
     except Exception as e:
         raise RuntimeError("Il pacchetto 'stumpy' è richiesto per Matrix Profile.") from e
 
     pc_cols = _extract_pc_columns(df)
-    figs_all, errors_all, thresholds_all = [], {}, {}
+    figs_all, errors_all, thresholds_all, time_all = [], {}, {}, {}
 
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
@@ -466,9 +502,7 @@ def detect_matrix_profile(df: pd.DataFrame, n: int, w: int):
             time_idx = np.asarray([], dtype=float)
         else:
             mp = stp.stump(series, m=w)
-            # mp[:, 0] è la matrix profile; lunghezza = len(series) - w + 1
             errors_full = _to_float_array(mp[:, 0])
-            # allineo agli indici [w, len(series)-1] => lunghezza = len(series) - w
             errors = errors_full[:-1] if errors_full.size > 0 else errors_full
             train_cut = max(0, min(errors.size, n - w))
             train_errors = errors[:train_cut]
@@ -478,30 +512,30 @@ def detect_matrix_profile(df: pd.DataFrame, n: int, w: int):
 
         errors_all[pc] = errors
         thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
+        time_all[pc] = time_idx
         figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
 
-    return figs_all, errors_all, thresholds_all
+    # 🆕 Estrai anomaly data
+    anomaly_data = _extract_anomaly_data(errors_all, thresholds_all, time_all)
+
+    return figs_all, anomaly_data
+
 
 # ======================================================
-# Modelli basati su Clustering (DBSCAN / OPTICS / K-Means)
+# Clustering: DBSCAN
 # ======================================================
 
 def detect_anomalies_dbscan(df: pd.DataFrame, n: int, w: int,
                             eps: float = 0.25, min_samples: int = 15, knn_k: int | None = None):
-    """
-    Score densità tramite distanza al k-esimo vicino sui soli dati di training (k = min_samples se non specificato).
-    L'algoritmo DBSCAN non viene usato per le label, ma 'eps' resta utile come riferimento UI.
-    """
     from sklearn.neighbors import NearestNeighbors
 
     pc_cols = _extract_pc_columns(df)
     time_full = _ensure_time_column(df)
+    figs_all, errors_all, thresholds_all, time_all = [], {}, {}, {}
 
-    figs_all, errors_all, thresholds_all = [], {}, {}
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
-
         windows, idxs = [], []
         for i in range(w, len(series)):
             windows.append(series[i - w:i])
@@ -514,13 +548,11 @@ def detect_anomalies_dbscan(df: pd.DataFrame, n: int, w: int,
             time_idx = np.asarray([], dtype=float)
         else:
             X_all = np.asarray(windows, dtype=float)
-            # training windows: finestre con indice di predizione < n
             n_train_windows = max(0, min(X_all.shape[0], n - w))
             X_train = X_all[:n_train_windows] if n_train_windows > 0 else None
 
             k = int(knn_k if knn_k is not None else max(1, min_samples))
             if X_train is None or X_train.shape[0] < k:
-                # non abbastanza vicini: fallback a distanza media delle k minori sul full
                 nbrs = NearestNeighbors(n_neighbors=min(k, max(1, X_all.shape[0]))).fit(X_all)
                 dists, _ = nbrs.kneighbors(X_all)
                 kth = dists[:, -1] if dists.ndim == 2 and dists.shape[1] > 0 else np.zeros(X_all.shape[0])
@@ -540,27 +572,30 @@ def detect_anomalies_dbscan(df: pd.DataFrame, n: int, w: int,
 
         errors_all[pc] = errors
         thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr, "eps_ref": float(eps)}
+        time_all[pc] = time_idx
         figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
 
-    return figs_all, errors_all, thresholds_all
+    # 🆕 Estrai anomaly data
+    anomaly_data = _extract_anomaly_data(errors_all, thresholds_all, time_all)
 
+    return figs_all, anomaly_data
+
+
+# ======================================================
+# Clustering: OPTICS
+# ======================================================
 
 def detect_anomalies_optics(df: pd.DataFrame, n: int, w: int,
                             min_samples: int = 5, xi: float = 0.01, min_cluster_size: float | int = 0.1):
-    """
-    Score densità basato su OPTICS: reachability\_ come errore (più alto => più anomalo).
-    Soglia fissa calcolata sugli errori delle sole finestre di training.
-    """
     from sklearn.cluster import OPTICS
 
     pc_cols = _extract_pc_columns(df)
     time_full = _ensure_time_column(df)
+    figs_all, errors_all, thresholds_all, time_all = [], {}, {}, {}
 
-    figs_all, errors_all, thresholds_all = [], {}, {}
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
-
         windows, idxs = [], []
         for i in range(w, len(series)):
             windows.append(series[i - w:i])
@@ -579,10 +614,8 @@ def detect_anomalies_optics(df: pd.DataFrame, n: int, w: int,
                             xi=float(xi),
                             min_cluster_size=min_cluster_size)
             optics.fit(X_all)
-            # ricostruisco reachability per indice originale
             reach = np.full(X_all.shape[0], np.inf, dtype=float)
             reach[optics.ordering_] = optics.reachability_
-            # rimpiazzo inf con massimo finito
             finite = reach[np.isfinite(reach)]
             if finite.size == 0:
                 reach[:] = 0.0
@@ -597,16 +630,21 @@ def detect_anomalies_optics(df: pd.DataFrame, n: int, w: int,
 
         errors_all[pc] = errors
         thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
+        time_all[pc] = time_idx
         figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
 
-    return figs_all, errors_all, thresholds_all
+    # 🆕 Estrai anomaly data
+    anomaly_data = _extract_anomaly_data(errors_all, thresholds_all, time_all)
 
+    return figs_all, anomaly_data
+
+
+# ======================================================
+# Clustering: K-Means
+# ======================================================
 
 def train_kmeans(df: pd.DataFrame, n: int, w: int, n_clusters: int = 3, random_state: int = 42):
-    """
-    Allena un K-Means per ciascuna PC sulle finestre dei primi n campioni.
-    """
     from sklearn.cluster import KMeans
     pc_cols = _extract_pc_columns(df)
     models: Dict[str, Any] = {}
@@ -629,18 +667,13 @@ def train_kmeans(df: pd.DataFrame, n: int, w: int, n_clusters: int = 3, random_s
 
 
 def detect_anomalies_kmeans(df: pd.DataFrame, models: Dict[str, Any], n: int, w: int):
-    """
-    Anomaly score = distanza al centroide più vicino per ciascuna finestra.
-    Soglie calcolate come per gli altri modelli.
-    """
     pc_cols = _extract_pc_columns(df)
     time_full = _ensure_time_column(df)
+    figs_all, errors_all, thresholds_all, time_all = [], {}, {}, {}
 
-    figs_all, errors_all, thresholds_all = [], {}, {}
     for pc in pc_cols:
         series = _to_float_array(df[pc].values)
         model = models.get(pc)
-
         windows, idxs = [], []
         for i in range(w, len(series)):
             windows.append(series[i - w:i])
@@ -653,8 +686,7 @@ def detect_anomalies_kmeans(df: pd.DataFrame, models: Dict[str, Any], n: int, w:
             time_idx = np.asarray([], dtype=float)
         else:
             X_all = np.asarray(windows, dtype=float)
-            # distanza al centroide più vicino
-            dists = model.transform(X_all)  # shape: (n_samples, n_clusters)
+            dists = model.transform(X_all)
             errors = np.min(dists, axis=1)
             train_cut = max(0, min(errors.size, n - w))
             train_errors = errors[:train_cut]
@@ -664,7 +696,11 @@ def detect_anomalies_kmeans(df: pd.DataFrame, models: Dict[str, Any], n: int, w:
 
         errors_all[pc] = errors
         thresholds_all[pc] = {"fixed": fixed_thr, "variable": var_thr}
+        time_all[pc] = time_idx
         figs = _generate_figures_per_pc(time_idx, series, errors, fixed_thr, var_thr, pc)
         figs_all.extend(figs)
 
-    return figs_all, errors_all, thresholds_all
+    # 🆕 Estrai anomaly data
+    anomaly_data = _extract_anomaly_data(errors_all, thresholds_all, time_all)
+
+    return figs_all, anomaly_data
