@@ -16,9 +16,8 @@ import plotly.graph_objs as go
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-
 # ======================================================
-# Funzioni generiche (INVARIATE)
+# Funzioni generiche
 # ======================================================
 
 def _to_float_array(a) -> np.ndarray:
