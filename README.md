@@ -142,9 +142,6 @@ Seleziona algoritmo e parametri per visualizzare cluster in 3D
 
 ---
 
-Ecco la sezione migliorata sugli algoritmi di Anomaly Detection:
-
-```markdown
 ## 🚨 Anomaly Detection - Dettaglio Algoritmi
 
 ### 📈 **Metodi Basati su Regressione**
@@ -152,107 +149,113 @@ Ecco la sezione migliorata sugli algoritmi di Anomaly Detection:
 Questi metodi predicono il valore atteso di ogni componente principale e identificano come anomalie i punti con errore di predizione superiore a una soglia calcolata dinamicamente.
 
 #### **Linear Regression + Bagging**
-```python
-train_linear_regression_bagging(pca_df, n=180, w=20, num_models=10)
-```
-- **Funzionamento**: Addestra `num_models` regressori lineari su finestre mobili di dimensione `w`
-- **Ensemble**: Predizione finale = media delle predizioni dei modelli
-- **Soglia**: `media(errori) + 2 * std(errori)` calcolata per ogni PC
+- **Funzionamento**: Addestra multipli regressori lineari su finestre temporali scorrevoli
+- **Ensemble**: La predizione finale è la media delle predizioni di tutti i modelli
+- **Soglia anomalia**: `media(errori) + 2 × deviazione_standard(errori)` calcolata per ogni PC
+- **Parametri chiave**:
+  - `n`: numero di finestre per training (default: 180)
+  - `w`: dimensione finestra temporale (default: 20)
+  - `num_models`: numero di modelli nell'ensemble (default: 10)
 - **Ottimale per**: Trend lineari, dati con varianza stabile
 
 #### **Random Forest / Gradient Boosting / Extra Trees + Bagging**
-```python
-train_random_forest_bagging(pca_df, n=180, w=20, num_models=10)
-```
 - **Funzionamento**: Modelli ensemble basati su alberi decisionali con aggregazione bootstrap
 - **Vantaggi**: Catturano relazioni non-lineari, robusti a outlier nel training set
-- **Parametri chiave**:
-  - `n`: finestre usate per training (default 180)
-  - `w`: dimensione finestra temporale (default 20)
-  - `num_models`: numero di modelli nell'ensemble (default 10)
+- **Stessa struttura parametrica** del Linear Regression
+- **Ottimale per**: Pattern complessi, relazioni non-lineari tra PC
 
 ---
 
 ### 📏 **Metodi Basati su Distanze**
 
 #### **LOF (Local Outlier Factor)**
-```python
-detect_anomalies_lof(pca_df, n_neighbors=20, contamination=0.1)
-```
-- **Principio**: Misura la densità locale di ogni punto rispetto ai suoi vicini
-- **Score**: LOF > 1 indica punto meno denso dei vicini (potenziale anomalia)
+- **Principio**: Misura la densità locale di ogni punto rispetto ai suoi k-vicini più prossimi
+- **Score anomalia**: LOF > 1.5 indica un punto significativamente meno denso dei vicini
 - **Parametri**:
-  - `n_neighbors`: numero di vicini per calcolo densità locale
-  - `contamination`: proporzione attesa di anomalie (0.1 = 10%)
-- **Ottimale per**: Anomalie in regioni a bassa densità
+  - `n_neighbors`: numero di vicini per calcolo densità locale (default: 20)
+  - `contamination`: proporzione attesa di anomalie (default: 0.1 = 10%)
+- **Vantaggi**: Identifica anomalie locali anche in dataset con densità variabile
+- **Ottimale per**: Anomalie in regioni a bassa densità, cluster non globulari
 
 #### **Matrix Profile (STUMPY)**
-```python
-detect_anomalies_matrix_profile(pca_df, m=10)
-```
-- **Funzionamento**: Calcola la distanza euclidea minima tra ogni sottosequenza e tutte le altre di lunghezza `m`
-- **Discord**: Sottosequenze con massima distanza dal resto della serie temporale
-- **Vantaggi**: 
-  - Identifica pattern unici che non si ripetono
-  - Non richiede labeled data
+- **Funzionamento**: Calcola la distanza euclidea minima tra ogni sottosequenza temporale e tutte le altre di lunghezza `m`
+- **Discord detection**: Le sottosequenze con massima distanza sono "discord" (pattern unici)
 - **Parametri**:
-  - `m`: lunghezza della sottosequenza (default 10 timepoints)
-- **Ottimale per**: Anomalie contestuali in serie temporali
+  - `m`: lunghezza della sottosequenza (default: 10 timepoints)
+- **Vantaggi**:
+  - Identifica pattern che non si ripetono nella serie temporale
+  - Non richiede dati etichettati
+  - Parameter-free (solo `m` da configurare)
+- **Ottimale per**: Anomalie contestuali in serie temporali, eventi rari
 
 ---
 
 ### 🧩 **Metodi Basati su Clustering**
 
 #### **DBSCAN (Density-Based Spatial Clustering)**
-```python
-detect_anomalies_dbscan(pca_df, eps=0.25, min_samples=15, knn_k=10)
-```
-- **Principio**: Punti in regioni sparse (non raggruppabili in cluster) sono anomalie
-- **Anomaly Score**: 
-  - Punti noise (label -1) → anomalie dirette
-  - Opzionale: distanza media dai `knn_k` vicini più prossimi
+- **Principio**: Punti in regioni sparse (etichettati come "noise") sono potenziali anomalie
+- **Anomaly Score**:
+  - **Metodo 1**: Punti con label `-1` (noise) → anomalie dirette
+  - **Metodo 2** (opzionale): Distanza media dai `knn_k` vicini più prossimi
 - **Parametri**:
-  - `eps`: raggio massimo per considerare punti vicini
-  - `min_samples`: minimo punti per formare un cluster denso
-  - `knn_k`: vicini per calcolo score distanza (se abilitato)
-- **Adattativo**: Se `knn_k` specificato, `eps` viene ricalcolato automaticamente
+  - `eps`: raggio massimo di vicinanza (default: 0.25)
+  - `min_samples`: minimo punti per formare un cluster denso (default: 15)
+  - `knn_k`: k-vicini per calcolo score distanza (opzionale, default: 10)
+- **Caratteristica adattiva**: Se `knn_k` è specificato, `eps` viene ricalcolato automaticamente come media delle distanze k-NN
 
 #### **OPTICS (Ordering Points To Identify Clustering Structure)**
-```python
-detect_anomalies_optics(pca_df, min_samples=15, xi=0.05, min_cluster_size=20)
-```
-- **Funzionamento**: Ordinamento basato su reachability distance (generalizzazione di DBSCAN)
-- **Anomaly Score**: Alta reachability distance = punto isolato
+- **Funzionamento**: Ordinamento dei punti basato su "reachability distance" (generalizzazione di DBSCAN)
+- **Anomaly Score**: Alta reachability distance = punto isolato/anomalo
 - **Parametri**:
-  - `min_samples`: stesso significato di DBSCAN
-  - `xi`: pendenza minima del grafico reachability per estrarre cluster
-  - `min_cluster_size`: dimensione minima cluster validi
-- **Vantaggi**: Automatico su dataset con cluster a densità variabile
+  - `min_samples`: stesso significato di DBSCAN (default: 15)
+  - `xi`: pendenza minima del grafico reachability per estrarre cluster (default: 0.05)
+  - `min_cluster_size`: dimensione minima cluster validi (default: 20)
+- **Vantaggi**: Automatico su dataset con cluster a densità variabile (non richiede `eps`)
+- **Ottimale per**: Dataset complessi con cluster annidati
 
 #### **K-Means Distance Score**
-```python
-detect_anomalies_kmeans(pca_df, n_clusters=5, threshold_percentile=95)
-```
 - **Principio**: Punti lontani dal centroide del proprio cluster sono anomalie
 - **Anomaly Score**: Distanza euclidea dal centroide assegnato
-- **Soglia**: Percentile della distribuzione delle distanze (default 95°)
+- **Soglia anomalia**: Percentile della distribuzione delle distanze (default: 95° → top 5% anomalie)
 - **Parametri**:
-  - `n_clusters`: numero di cluster da creare
-  - `threshold_percentile`: percentile per definizione anomalia (95 → top 5%)
+  - `n_clusters`: numero di cluster (default: 5)
+  - `threshold_percentile`: percentile per definizione soglia (default: 95)
+- **Vantaggi**: Semplice, veloce, interpretabile
+- **Limiti**: Assume cluster di forma sferica
+
+---
+
+### 🎯 **Threshold Dinamiche (Metodi Regressione)**
+
+Tutti i modelli di regressione utilizzano soglie adattive calcolate tramite **finestre mobili**:
+
+**Formula**: `soglia(t) = media_mobile(t) + pen × std_mobile(t)`
+
+- **Finestra mobile**: 20 timepoints centrati sul punto corrente
+- **Parametro `pen`** (penalità di deviazione standard):
+  - `pen = 1`: Soglia meno restrittiva (~68% dati considerati normali)
+  - `pen = 2`: **Bilanciato** (~95% dati normali) ← *default*
+  - `pen = 3`: Molto restrittivo (~99.7% dati normali)
+
+**Vantaggio**: Si adatta a drift temporali e cambi di regime nella serie temporale
+
+---
 
 ### 📊 **Comparazione Algoritmi**
 
 | Metodo | Tipo Anomalia | Complessità | Parametri Critici | Pro | Contro |
 |--------|---------------|-------------|-------------------|-----|--------|
-| **Linear Reg + Bagging** | Deviazioni da trend lineare | O(n) | `w`, `num_models` | Veloce, interpretabile | Solo trend lineari |
-| **Random Forest** | Pattern non-lineari | O(n log n) | `w`, `num_models` | Robusto, cattura complessità | Meno interpretabile |
-| **LOF** | Densità locale | O(n²) | `n_neighbors` | Identifica anomalie locali | Sensibile a scaling |
-| **Matrix Profile** | Discords temporali | O(n² log n) | `m` | Preciso su serie temporali | Costoso computazionalmente |
-| **DBSCAN** | Regioni sparse | O(n log n) | `eps`, `min_samples` | Robusto al rumore | Difficile tuning parametri |
+| **Linear Reg + Bagging** | Deviazioni da trend | O(n·w·m) | `n`, `w`, `num_models` | Veloce, interpretabile | Solo trend lineari |
+| **Random Forest/GB/ET** | Pattern non-lineari | O(n·w·m·log(w)) | `n`, `w`, `num_models` | Cattura complessità | Meno interpretabile |
+| **LOF** | Densità locale | O(n·k·log(n)) | `n_neighbors`, `contamination` | Anomalie locali | Sensibile a scaling |
+| **Matrix Profile** | Discord temporali | O(n²·m) | `m` | Preciso, no labels | Computazionalmente costoso |
+| **DBSCAN** | Regioni sparse | O(n·log(n)) | `eps`, `min_samples` | Robusto al rumore | Tuning `eps` difficile |
 | **OPTICS** | Multi-densità | O(n²) | `xi`, `min_cluster_size` | Automatico su densità variabili | Più lento di DBSCAN |
-| **K-Means** | Distanza da centroidi | O(n·k·i) | `n_clusters` | Semplice, veloce | Assume cluster sferici |
+| **K-Means** | Distanza centroidi | O(n·k·i) | `n_clusters`, `threshold_percentile` | Semplice, veloce | Cluster sferici |
 
+*Legenda complessità*: `n` = punti dati, `k` = vicini/cluster, `w` = dimensione finestra, `m` = modelli/lunghezza sottosequenza, `i` = iterazioni
 
+---
 
 ### 📁 Struttura del Progetto
 
