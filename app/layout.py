@@ -164,6 +164,7 @@ layout = html.Div([
     # === BOX 5: Clustering ===
     html.Div([
         html.H4("🎯 Clustering", className="panel-title", style={'marginBottom': '10px'}),
+        html.Hr(style={'borderColor': '#ddd'}),
         html.P("Raggruppa i dati PCA in cluster omogenei",
                style={'fontSize': '13px', 'color': '#666', 'marginBottom': '15px'}),
 
@@ -309,7 +310,7 @@ layout = html.Div([
     # === BOX 6: Anomaly Detection ===
     html.Div([
         html.H4("⚠️ Anomaly Detection", className="panel-title"),
-
+        html.Hr(style={'borderColor': '#ddd'}),
         html.Label("Categoria modello:"),
         dcc.Dropdown(
             id='anomaly-category',

@@ -310,7 +310,6 @@ def register_callbacks(app):
             stored_data = reordered_df.to_json(date_format='iso', orient='split')
 
             return html.Div([
-                html.H3("📊 Statistiche Dati Raw"),
                 table,
                 html.Hr(),
                 dcc.Graph(figure=fig_temporal),

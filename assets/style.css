@@ -27,6 +27,45 @@ body {
     }
 }
 
+.box > div[style*="textAlign: center"] {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+/* Contenitore flex per box side-by-side */
+.upload-boxes-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 25px;
+    margin-top: 25px;
+    width: 100%; /* Aggiungi questa riga */
+}
+
+/* Container singolo box (viola o verde) */
+.upload-box-container {
+    flex: 1 1 45%;
+    max-width: 500px;
+    min-height: 280px;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Radio buttons per modalità upload */
+.upload-mode-radio {
+    display: flex;  /* Cambia da inline-flex a flex */
+    gap: 30px;
+    justify-content: center;
+    align-items: center;
+    padding: 10px 20px;
+    background: #f9fafb;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    width: fit-content;
+    margin: 0 ;
+}
+
 /* --- Titolo app e descrizione --- */
 .app-title {
     text-align: center;
