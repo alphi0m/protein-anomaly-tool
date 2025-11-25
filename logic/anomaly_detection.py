@@ -105,42 +105,76 @@ def _generate_figures_per_pc(time_idx: np.ndarray,
     squared_errors = errors ** 2
     anomalies = errors > var_thr
 
+    # Grafico 1: Prediction Error
     fig1 = go.Figure()
-    fig1.add_trace(go.Scatter(x=time_idx, y=errors, mode='lines', name='Errore'))
+    fig1.add_trace(go.Scatter(x=time_idx, y=errors, mode='lines', name=f'Prediction Error {pc_name}'))
     fig1.add_trace(go.Scatter(x=time_idx, y=[fixed_thr] * len(errors),
-                              mode='lines', name='Soglia fissa', line=dict(dash='dash')))
+                              mode='lines', name='Fixed Threshold', line=dict(dash='dash', color='red')))
     fig1.add_trace(go.Scatter(x=time_idx, y=var_thr,
-                              mode='lines', name='Soglia variabile', line=dict(dash='dot')))
-    fig1.update_layout(title=f"{pc_name} - Errori")
+                              mode='lines', name='Variable Threshold', line=dict(dash='dot', color='blue')))
+    fig1.update_layout(
+        title={
+            'text': f"Prediction Error for {pc_name}",
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 16, 'color': '#222'}
+        },
+        xaxis_title="Time",
+        yaxis_title="Error"
+    )
 
+    # Grafico 2: Squared Error
     fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(x=time_idx, y=squared_errors, mode='lines', name='Errore^2'))
+    fig2.add_trace(go.Scatter(x=time_idx, y=squared_errors, mode='lines', name=f'Squared Error {pc_name}'))
     fig2.add_trace(go.Scatter(x=time_idx, y=[fixed_thr ** 2] * len(errors),
-                              mode='lines', name='Soglia fissa^2', line=dict(dash='dash')))
+                              mode='lines', name='Fixed Threshold', line=dict(dash='dash', color='red')))
     fig2.add_trace(go.Scatter(x=time_idx, y=var_thr ** 2,
-                              mode='lines', name='Soglia variabile^2', line=dict(dash='dot')))
-    fig2.update_layout(title=f"{pc_name} - Squared Errors")
+                              mode='lines', name='Variable Threshold', line=dict(dash='dot', color='blue')))
+    fig2.update_layout(
+        title={
+            'text': f"Squared Error for {pc_name}",
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 16, 'color': '#222'}
+        },
+        xaxis_title="Time",
+        yaxis_title="Squared Error"
+    )
 
+    # Grafico 3: Prediction with Intervals
     fig3 = go.Figure()
     full_time = np.arange(len(pc_series))
-    fig3.add_trace(go.Scatter(x=full_time, y=pc_series, mode='lines', name=pc_name))
+    fig3.add_trace(go.Scatter(x=full_time, y=pc_series, mode='lines', name=f'Mean Prediction {pc_name}'))
     if errors.size > 0:
         e = errors.copy()
         s = pc_series
         if np.std(e) > 1e-12 and np.std(s) > 1e-12:
-            e = (e - np.mean(e)) / (np.std(e) + 1e-12)
-            e = e * (np.std(s) * 0.5) + np.mean(s)
+            e = (e - np.mean(e)) / np.std(e)
+            s_norm = (s - np.mean(s)) / np.std(s)
+            fig3.add_trace(go.Scatter(x=time_idx, y=e,
+                                      mode='lines', name='Errore (norm)', line=dict(dash='dot')))
         else:
-            e = e * 0.0 + np.mean(s)
-        fig3.add_trace(go.Scatter(x=time_idx, y=e,
-                                  mode='lines', name='Errore (scalato)', line=dict(color='orange')))
+            fig3.add_trace(go.Scatter(x=time_idx, y=e,
+                                      mode='lines', name='Errore', line=dict(dash='dot')))
         anomaly_time = time_idx[anomalies]
         anomaly_vals = np.take(pc_series, anomaly_time, mode='clip')
         fig3.add_trace(go.Scatter(x=anomaly_time, y=anomaly_vals,
-                                  mode='markers', name='Anomalie', marker=dict(color='red', size=6)))
-    fig3.update_layout(title=f"{pc_name} - Serie & Anomalie")
+                                  mode='markers', name='Anomalie',
+                                  marker=dict(color='red', size=8, symbol='x')))
+    fig3.update_layout(
+        title={
+            'text': f"Prediction with Intervals for {pc_name}",
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 16, 'color': '#222'}
+        },
+        xaxis_title="Time",
+        yaxis_title="Prediction"
+    )
 
     return [fig1, fig2, fig3]
+
+
 
 
 # ======================================================

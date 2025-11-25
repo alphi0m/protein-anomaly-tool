@@ -23,17 +23,9 @@ from logic.anomaly_detection import (
 import logic.anomaly_detection as ad_mod
 _original_calculate_thresholds = ad_mod.calculate_variable_thresholds
 
+# python
 def apply_light_theme(fig, title=None, reverse_y=False):
-    """
-    Applica tema chiaro al grafico.
-
-    Args:
-        fig: Figura Plotly
-        title: Titolo del grafico
-        reverse_y: Se True, inverte l'asse Y
-    """
     layout_updates = {
-        'title': title,
         'plot_bgcolor': "#ffffff",
         'paper_bgcolor': "#ffffff",
         'font': dict(color="#222"),
@@ -42,12 +34,15 @@ def apply_light_theme(fig, title=None, reverse_y=False):
         'legend': dict(font=dict(color="#222"))
     }
 
-    # Aggiungi inversione asse Y se richiesto
+    if title is not None:
+        layout_updates['title'] = title
+
     if reverse_y:
         layout_updates['yaxis']['autorange'] = 'reversed'
 
     fig.update_layout(**layout_updates)
     return fig
+
 
 def generate_anomaly_text_summary(anomaly_data: Dict[str, Dict], n_total_windows: int) -> html.Div:
     """
