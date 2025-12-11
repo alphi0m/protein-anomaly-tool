@@ -152,7 +152,17 @@ layout = html.Div([
 
     # === BOX 4: Risultati PCA (appare solo se PCA attivata) ===
     html.Div([
-        html.H3("📈 Risultati PCA", style={'color': '#7a42ff'}),
+        html.Div([
+            html.H3("📈 Risultati PCA", style={'color': '#7a42ff', 'display': 'inline-block', 'marginRight': '15px'}),
+            html.Button(
+                "💾 Esporta PCA CSV",
+                id='export-pca-button',
+                n_clicks=0,
+                className="export-button",
+                style={'display': 'inline-block', 'fontSize': '12px', 'padding': '6px 12px'}
+            ),
+            dcc.Download(id='download-pca-csv')
+        ], style={'marginBottom': '10px'}),
         html.Hr(style={'borderColor': '#ddd'}),
         dcc.Loading(
             id="loading-pca",
@@ -163,7 +173,17 @@ layout = html.Div([
 
     # === BOX 5: Clustering ===
     html.Div([
-        html.H4("🎯 Clustering", className="panel-title", style={'marginBottom': '10px'}),
+        html.Div([
+            html.H4("🎯 Clustering", className="panel-title", style={'marginBottom': '10px', 'display': 'inline-block', 'marginRight': '15px'}),
+            html.Button(
+                "💾 Esporta Clustering CSV",
+                id='export-clustering-button',
+                n_clicks=0,
+                className="export-button",
+                style={'display': 'inline-block', 'fontSize': '12px', 'padding': '6px 12px'}
+            ),
+            dcc.Download(id='download-clustering-csv')
+        ]),
         html.Hr(style={'borderColor': '#ddd'}),
         html.P("Raggruppa i dati PCA in cluster omogenei",
                style={'fontSize': '13px', 'color': '#666', 'marginBottom': '15px'}),
@@ -309,7 +329,17 @@ layout = html.Div([
 
     # === BOX 6: Anomaly Detection ===
     html.Div([
-        html.H4("⚠️ Anomaly Detection", className="panel-title"),
+        html.Div([
+            html.H4("⚠️ Anomaly Detection", className="panel-title", style={'display': 'inline-block', 'marginRight': '15px'}),
+            html.Button(
+                "💾 Esporta Anomalie CSV",
+                id='export-anomaly-button',
+                n_clicks=0,
+                className="export-button",
+                style={'display': 'inline-block', 'fontSize': '12px', 'padding': '6px 12px'}
+            ),
+            dcc.Download(id='download-anomaly-csv')
+        ], style={'marginBottom': '10px'}),
         html.Hr(style={'borderColor': '#ddd'}),
         html.Label("Categoria modello:"),
         dcc.Dropdown(
@@ -648,7 +678,8 @@ layout = html.Div([
             id="loading-anomaly",
             type="circle",
             children=html.Div(id='anomaly-output', className='anomaly-panel')
-        )
+        ),
+        dcc.Store(id='stored-anomaly-data')  # Store per dati anomalie
     ], id="anomaly-section", className="box", style={'display': 'none'}),
 
 ])

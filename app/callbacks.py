@@ -682,28 +682,45 @@ def register_callbacks(app):
                 )
 
             # Parallel coordinates plot
+            from sklearn.preprocessing import StandardScaler
+
+            # ✅ 1. Normalizza TUTTO il DataFrame PCA
+            scaler = StandardScaler()
+            pca_df_norm = pd.DataFrame(
+                scaler.fit_transform(pca_df),
+                columns=pca_df.columns
+            )
+
+            # ✅ 2. Ordina colonne: PC1, PC2, ..., Time (garantisci ordine)
+            pc_cols = sorted([c for c in pca_df_norm.columns if c.startswith('PC')])
+            all_cols = pc_cols + ['Time']
+            pca_df_norm = pca_df_norm[all_cols]  # ← Riordina DataFrame
+
+            # ✅ 3. Costruisci dimensioni con RANGE ESTESO (forza -2.5 → 2.5)
             dimensions = []
-            for col in pc_cols:
+
+            for col in all_cols:
+                values = pca_df_norm[col]
+
+                # ✅ Calcola range simmetrico (evita compressioni)
+                max_abs = max(abs(values.min()), abs(values.max()))
+                range_min = -max_abs * 1.2  # ← Margine 20%
+                range_max = max_abs * 1.2
+
                 dimensions.append(dict(
                     label=col,
-                    values=pca_df[col],
-                    range=[pca_df[col].min(), pca_df[col].max()]  # ✅ Range nativo
+                    values=values,
+                    range=[range_min, range_max]  # ← Range simmetrico
                 ))
 
-            dimensions.append(dict(
-                label='Time',
-                values=pca_df['Time'],
-                range=[pca_df['Time'].min(), pca_df['Time'].max()]
-            ))
-
+            # ✅ 4. Crea grafico
             fig_parallel = go.Figure(data=go.Parcoords(
                 line=dict(
-                    color=pca_df['Time'],
+                    color=pca_df_norm['Time'],
                     colorscale='Viridis',
                     showscale=True,
-                    cmin=pca_df['Time'].min(),
-                    cmax=pca_df['Time'].max(),
-                    colorbar=dict(title='Time (ns)')
+                    cmin=pca_df_norm['Time'].min(),
+                    cmax=pca_df_norm['Time'].max()
                 ),
                 dimensions=dimensions,
                 labelfont=dict(size=12, color='#222'),
@@ -1108,3 +1125,4 @@ def register_callbacks(app):
         finally:
             # Ripristina funzione originale
             ad_mod.calculate_variable_thresholds = _original_calculate_thresholds
+
