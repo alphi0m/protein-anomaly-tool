@@ -152,17 +152,7 @@ layout = html.Div([
 
     # === BOX 4: Risultati PCA (appare solo se PCA attivata) ===
     html.Div([
-        html.Div([
-            html.H3("📈 Risultati PCA", style={'color': '#7a42ff', 'display': 'inline-block', 'marginRight': '15px'}),
-            html.Button(
-                "💾 Esporta PCA CSV",
-                id='export-pca-button',
-                n_clicks=0,
-                className="export-button",
-                style={'display': 'inline-block', 'fontSize': '12px', 'padding': '6px 12px'}
-            ),
-            dcc.Download(id='download-pca-csv')
-        ], style={'marginBottom': '10px'}),
+       html.H3("📈 Risultati PCA", style={'color': '#7a42ff', 'display': 'inline-block', 'marginRight': '15px'}),
         html.Hr(style={'borderColor': '#ddd'}),
         dcc.Loading(
             id="loading-pca",
@@ -329,17 +319,7 @@ layout = html.Div([
 
     # === BOX 6: Anomaly Detection ===
     html.Div([
-        html.Div([
-            html.H4("⚠️ Anomaly Detection", className="panel-title", style={'display': 'inline-block', 'marginRight': '15px'}),
-            html.Button(
-                "💾 Esporta Anomalie CSV",
-                id='export-anomaly-button',
-                n_clicks=0,
-                className="export-button",
-                style={'display': 'inline-block', 'fontSize': '12px', 'padding': '6px 12px'}
-            ),
-            dcc.Download(id='download-anomaly-csv')
-        ], style={'marginBottom': '10px'}),
+        html.H4("⚠️ Anomaly Detection", className="panel-title", style={'display': 'inline-block', 'marginRight': '15px'}),
         html.Hr(style={'borderColor': '#ddd'}),
         html.Label("Categoria modello:"),
         dcc.Dropdown(

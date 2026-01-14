@@ -233,7 +233,7 @@ def register_callbacks(app):
             )
             reordered_df = pivot_df[['residuo', 'angolo'] + time_columns]
 
-            # 5️⃣ Salva CSV (formato WIDE come il prof)
+            # 5️⃣ Salva CSV
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_csv = f'combined_series_sorted_{timestamp}.csv'
